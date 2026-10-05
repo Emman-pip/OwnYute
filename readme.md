@@ -1,6 +1,56 @@
 # OwnYute
 
-OwnYute is a Flutter music downloader and library for Linux and Android. Search YouTube or paste a song or playlist URL, preview tracks, choose tracks, and save MP3 files to a folder you select. The queue, recent tracks, library index, and theme choice survive a restart.
+**Own your music. Search, download, and organize YouTube music locally on Linux and Android.**
+
+OwnYute wraps [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) and FFmpeg in a native-feeling Flutter app. Search YouTube or paste a song or playlist URL, preview tracks, download them as high-quality MP3s with correct tags and album/single cover art, and manage everything in a local library. Your queue, recent tracks, library index, and theme choice all survive a restart.
+
+![OwnYute search screen](docs/images/01-search.png)
+
+## Why OwnYute
+
+- **Local ownership** — files stay in folders you choose, with metadata and artwork embedded in the files.
+- **Best available quality** — downloads the best source audio and converts it to VBR MP3.
+- **Cover art that travels with the file** — the source thumbnail (or an image you pick) is embedded as album/single artwork.
+- **Resilient by design** — `yt-dlp` updates nightly and every update is validated with automatic rollback.
+- **One app, two platforms** — the same experience on Linux desktop and Android, with native integration on each.
+
+## Screenshots
+
+### Search and add
+
+Search YouTube, or use **Paste URL** for a song or playlist. Tap a result to preview or queue it.
+
+| Search results | Track actions |
+| --- | --- |
+| ![Search results](docs/images/02-search-results.png) | ![Track dialog](docs/images/03-track-dialog.png) |
+
+### Download queue
+
+Batch downloads are grouped and collapsible; individual additions appear under **Singles**. Failed items stay in the queue for retry.
+
+![Download queue](docs/images/04-queue.png)
+
+### Library
+
+**All songs** starts collapsed, followed by virtual playlist folders and physical storage folders. Use **Select** to pick several songs and add them to a playlist in one step.
+
+| Library | All songs expanded | Multi-select |
+| --- | --- | --- |
+| ![Library](docs/images/05-library.png) | ![All songs](docs/images/06-library-songs.png) | ![Multi-select](docs/images/07-library-multiselect.png) |
+
+### Player
+
+A persistent mini player while you browse, with a full expanded view for seek, previous/next, shuffle, and repeat.
+
+| Expanded player | Mini player |
+| --- | --- |
+| ![Player](docs/images/08-player.png) | ![Mini player](docs/images/09-mini-player.png) |
+
+### Themes
+
+Seven color schemes, including complementary dark blue and dark pink.
+
+![Settings and themes](docs/images/10-settings.png)
 
 ## Linux setup
 
@@ -64,4 +114,24 @@ tool/generate_app_icons.sh
 
 Android includes legacy, adaptive, round, and monochrome themed icons. Linux builds bundle the GTK window icon, a desktop entry, and standard hicolor assets for packaging.
 
+## Documentation
+
+Full technical documentation lives in [`docs/`](docs/README.md):
+
+- [Tech Stack](docs/tech-stack.md)
+- [Architecture](docs/architecture.md)
+- [Folder Structure](docs/folder-structure.md)
+- [Aim and Achievements](docs/aim-and-achievements.md)
+- [Data Model](docs/data-model.md)
+- [Platform Integration](docs/platform-integration.md)
+- [Build and Release](docs/build-and-release.md)
+- [Testing](docs/testing.md)
+- [Troubleshooting](docs/troubleshooting.md)
+
+## Verification checklist
+
 For Android verification, use a connected device to search, open a song URL (including a radio mix watch URL), preview it, download it, and play the downloaded MP3. Import and play a known-good MP3 separately, then repeat playback after restarting the app. If a step fails, copy **Build and crash report** from Settings after reopening the app. Capture `adb logcat -d -v time` when ADB is available.
+
+## License notes
+
+OwnYute orchestrates `yt-dlp` and FFmpeg. The bundled `yt-dlp`, FFmpeg, Python, and `youtubedl-android` components carry their own licenses (FFmpeg and `youtubedl-android` are GPL-family), which matters when distributing modified builds. Ensure you have the right to download the content you choose.
