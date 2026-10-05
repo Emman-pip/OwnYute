@@ -62,6 +62,17 @@ class AppController extends ChangeNotifier {
   AppThemeChoice themeChoice = AppThemeChoice.system;
   bool playerAnimationEnabled = true;
   int _batchSequence = 0;
+  Widget? folderOverlay;
+
+  void openFolderOverlay(Widget page) {
+    folderOverlay = page;
+    notifyListeners();
+  }
+
+  void closeFolderPage() {
+    folderOverlay = null;
+    notifyListeners();
+  }
 
   Future<void> recordPlay(Track track) async {
     await database.savePlayHistory(track);
@@ -121,6 +132,7 @@ class AppController extends ChangeNotifier {
       }
     }
     await refreshLibrary();
+    await player.restore();
     notifyListeners();
   }
 

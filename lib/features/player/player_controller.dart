@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import '../../core/models.dart';
 import '../search/youtube_service.dart';
@@ -46,6 +49,8 @@ class PlayerController extends ChangeNotifier {
   String? error;
   String? _source;
   bool _androidServiceStarted = false;
+  int? _externalPid;
+  int _ticks = 0;
 
   Future<void> handlePlatformEvent(String event, Object? value) async {
     if (event == 'duration') {
@@ -79,6 +84,7 @@ class PlayerController extends ChangeNotifier {
       preparing = false;
       buffering = false;
       _androidServiceStarted = false;
+      unawaited(_saveSnapshot());
     }
     notifyListeners();
   }
@@ -93,6 +99,7 @@ class PlayerController extends ChangeNotifier {
     duration = Duration(seconds: current!.duration);
     _source = null;
     await _start();
+    unawaited(_saveSnapshot());
   }
 
   Future<void> playLocal(List<LibraryTrack> tracks, int index) async {
@@ -215,13 +222,142 @@ class PlayerController extends ChangeNotifier {
 
   void _startTimer() {
     _timer?.cancel();
+    _ticks = 0;
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       position += const Duration(seconds: 1);
       if (!_isAndroid && duration > Duration.zero && position >= duration) {
         next();
       }
       notifyListeners();
+      _ticks++;
+      if (_ticks % 5 == 0) unawaited(_saveSnapshot());
     });
+  }
+
+  Future<File> _snapshotFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File(p.join(dir.path, 'playback_snapshot.json'));
+  }
+
+  Future<void> _saveSnapshot() async {
+    final track = current;
+    if (track == null) return;
+    try {
+      final file = await _snapshotFile();
+      await file.writeAsString(
+        jsonEncode({
+          'queue': queue.map((item) => item.toJson()).toList(),
+          'index': queue.indexOf(track),
+          'positionMs': position.inMilliseconds,
+          'durationMs': duration.inMilliseconds,
+          'playing': playing,
+          'source': _source,
+          'pid': _isAndroid ? null : (_process?.pid ?? _externalPid),
+          'savedAt': DateTime.now().millisecondsSinceEpoch,
+        }),
+      );
+    } catch (_) {}
+  }
+
+  bool _pidAlive(int pid) {
+    try {
+      final cmdline = File('/proc/$pid/cmdline').readAsStringSync();
+      return cmdline.contains('ffplay');
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Reattaches to playback that is still running after the app was closed,
+  /// or restores the last known queue/track in a paused state.
+  Future<void> restore() async {
+    try {
+      final file = await _snapshotFile();
+      if (!await file.exists()) return;
+      final data =
+          jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      final restored = (data['queue'] as List?)
+              ?.whereType<Map>()
+              .map((item) => Track.fromJson(Map<String, dynamic>.from(item)))
+              .toList() ??
+          const <Track>[];
+      if (restored.isEmpty) return;
+      final index =
+          ((data['index'] as num?)?.toInt() ?? 0).clamp(0, restored.length - 1);
+      queue
+        ..clear()
+        ..addAll(restored);
+      current = restored[index];
+      position = Duration(
+        milliseconds: (data['positionMs'] as num?)?.toInt() ?? 0,
+      );
+      duration = Duration(
+        milliseconds: (data['durationMs'] as num?)?.toInt() ?? 0,
+      );
+      if (duration == Duration.zero && current!.duration > 0) {
+        duration = Duration(seconds: current!.duration);
+      }
+      final savedSource = data['source'] as String?;
+      final wasPlaying = data['playing'] == true;
+      final savedAt = DateTime.fromMillisecondsSinceEpoch(
+        (data['savedAt'] as num?)?.toInt() ?? 0,
+      );
+      var attached = false;
+      if (_isAndroid) {
+        final state = await _android.invokeMethod<dynamic>('state');
+        if (state is Map) {
+          _androidServiceStarted = true;
+          _source = (state['source'] as String?) ?? savedSource;
+          position = Duration(
+            milliseconds: (state['position'] as num?)?.toInt() ?? 0,
+          );
+          final liveDuration = (state['duration'] as num?)?.toInt() ?? 0;
+          if (liveDuration > 0) duration = Duration(milliseconds: liveDuration);
+          playing = state['playing'] == true;
+          preparing = false;
+          buffering = false;
+          attached = true;
+          if (playing) _startTimer();
+          // Best effort: the notification may have advanced while the UI was
+          // gone, so jump to whichever queued track matches the live title.
+          final liveTitle = state['title'] as String?;
+          if (liveTitle != null &&
+              liveTitle != current!.title &&
+              savedSource != null) {
+            final match = queue.indexWhere(
+              (track) => track.title == liveTitle,
+            );
+            if (match >= 0) current = queue[match];
+          }
+        }
+      } else if (Platform.isLinux) {
+        final pid = (data['pid'] as num?)?.toInt();
+        if (pid != null && _pidAlive(pid)) {
+          _externalPid = pid;
+          _source = savedSource ?? current!.url;
+          if (wasPlaying) {
+            position += DateTime.now().difference(savedAt);
+            playing = true;
+            _startTimer();
+          }
+          attached = true;
+        }
+      }
+      if (attached && duration > Duration.zero && position >= duration) {
+        _timer?.cancel();
+        playing = false;
+        await next();
+        return;
+      }
+      if (!attached) {
+        playing = false;
+        preparing = false;
+        buffering = false;
+        _source = null;
+        _androidServiceStarted = false;
+      }
+      notifyListeners();
+    } catch (_) {}
   }
 
   Future<void> _stopProcess() async {
@@ -229,6 +365,13 @@ class PlayerController extends ChangeNotifier {
     final process = _process;
     _process = null;
     process?.kill();
+    final external = _externalPid;
+    _externalPid = null;
+    if (external != null && external != process?.pid) {
+      try {
+        Process.killPid(external);
+      } catch (_) {}
+    }
     if (_isAndroid && _androidServiceStarted) {
       await _android.invokeMethod<void>('stop');
       _androidServiceStarted = false;
@@ -265,6 +408,7 @@ class PlayerController extends ChangeNotifier {
       preparing = false;
       notifyListeners();
     }
+    unawaited(_saveSnapshot());
   }
 
   Future<void> seek(Duration to) async {
@@ -288,6 +432,7 @@ class PlayerController extends ChangeNotifier {
     } else {
       notifyListeners();
     }
+    unawaited(_saveSnapshot());
   }
 
   Future<void> next() async {
@@ -310,6 +455,7 @@ class PlayerController extends ChangeNotifier {
     position = Duration.zero;
     duration = Duration(seconds: current!.duration);
     await _start();
+    unawaited(_saveSnapshot());
   }
 
   Future<void> previous() async {
@@ -320,6 +466,7 @@ class PlayerController extends ChangeNotifier {
     position = Duration.zero;
     duration = Duration(seconds: current!.duration);
     await _start();
+    unawaited(_saveSnapshot());
   }
 
   void setShuffle(bool value) {
@@ -336,6 +483,13 @@ class PlayerController extends ChangeNotifier {
   void dispose() {
     _timer?.cancel();
     _process?.kill();
+    final external = _externalPid;
+    _externalPid = null;
+    if (external != null) {
+      try {
+        Process.killPid(external);
+      } catch (_) {}
+    }
     if (_isAndroid) _android.setMethodCallHandler(null);
     super.dispose();
   }

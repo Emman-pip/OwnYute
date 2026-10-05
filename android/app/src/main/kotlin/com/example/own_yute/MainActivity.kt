@@ -44,6 +44,14 @@ class MainActivity : FlutterActivity() {
             runOnUiThread { playerChannel?.invokeMethod(method, value) }
         }
         playerChannel?.setMethodCallHandler { call, result ->
+            if (call.method == "state") {
+                try {
+                    result.success(PlaybackService.instance?.state())
+                } catch (failure: Exception) {
+                    result.error("playback_failed", failure.message, null)
+                }
+                return@setMethodCallHandler
+            }
             val action = when (call.method) {
                 "play" -> PlaybackService.ACTION_PLAY
                 "pause" -> PlaybackService.ACTION_PAUSE

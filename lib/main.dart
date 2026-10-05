@@ -68,11 +68,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       listenable: app,
       builder: (context, _) {
         final wide = MediaQuery.sizeOf(context).width >= 700;
-        final body = [
-          SearchPage(app: app, onQueue: () => setState(() => page = 1)),
-          QueuePage(app: app),
-          LibraryPage(app: app),
-        ][page];
         return Scaffold(
           appBar: AppBar(
             title: const AppBrandTitle(),
@@ -138,7 +133,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       child: Center(
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 960),
-                          child: body,
+                          child: Stack(
+                            children: [
+                              Offstage(
+                                offstage: app.folderOverlay != null,
+                                child: IndexedStack(
+                                  index: page,
+                                  children: [
+                                    SearchPage(
+                                      app: app,
+                                      onQueue: () => setState(() => page = 1),
+                                    ),
+                                    QueuePage(app: app),
+                                    LibraryPage(app: app),
+                                  ],
+                                ),
+                              ),
+                              if (app.folderOverlay != null)
+                                PopScope(
+                                  canPop: false,
+                                  onPopInvokedWithResult: (_, _) =>
+                                      app.closeFolderPage(),
+                                  child: app.folderOverlay!,
+                                ),
+                            ],
+                          ),
                         ),
                       ),
                     ),

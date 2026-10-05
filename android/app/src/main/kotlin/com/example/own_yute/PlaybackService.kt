@@ -18,6 +18,7 @@ class PlaybackService : Service() {
     private var player: MediaPlayer? = null
     private var title = "OwnYute"
     private var artist = ""
+    private var source: String? = null
     private var paused = false
     private var prepared = false
     private var started = false
@@ -26,6 +27,7 @@ class PlaybackService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
         if (Build.VERSION.SDK_INT >= 26) {
             val manager = getSystemService(NotificationManager::class.java)
@@ -38,6 +40,7 @@ class PlaybackService : Service() {
         when (intent?.action) {
             ACTION_PLAY -> {
                 val source = intent.getStringExtra("source") ?: return START_NOT_STICKY
+                this.source = source
                 title = intent.getStringExtra("title") ?: "OwnYute"
                 artist = intent.getStringExtra("artist") ?: ""
                 val position = intent.getIntExtra("position", 0)
@@ -201,9 +204,24 @@ class PlaybackService : Service() {
         events?.invoke(method, value)
     }
 
+    /** Live playback state so a reopened UI can reattach. Null when idle. */
+    fun state(): Map<String, Any?>? {
+        val active = player ?: return null
+        return mapOf(
+            "source" to source,
+            "title" to title,
+            "artist" to artist,
+            "position" to (try { active.currentPosition } catch (_: Exception) { 0 }),
+            "duration" to (try { active.duration } catch (_: Exception) { 0 }),
+            "playing" to (started && !paused),
+            "prepared" to prepared,
+        )
+    }
+
     override fun onDestroy() {
         player?.release()
         player = null
+        if (instance === this) instance = null
         super.onDestroy()
     }
 
@@ -219,6 +237,8 @@ class PlaybackService : Service() {
         const val ACTION_NEXT = "own_yute.NEXT"
         private const val CHANNEL = "own_yute_playback"
         private const val NOTIFICATION_ID = 14
-        var events: ((String, Any?) -> Unit)? = null
+        private var events: ((String, Any?) -> Unit)? = null
+        var instance: PlaybackService? = null
+            private set
     }
 }

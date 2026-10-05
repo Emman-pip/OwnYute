@@ -18,6 +18,8 @@ class SearchPage extends StatefulWidget {
 class _SearchPageState extends State<SearchPage> {
   final query = TextEditingController();
   String term = '';
+  bool showAllPlaylistFolders = false;
+  bool showAllStorageFolders = false;
   @override
   void dispose() {
     query.dispose();
@@ -122,6 +124,7 @@ class _SearchPageState extends State<SearchPage> {
                     onPressed: () => setState(() {
                       query.clear();
                       term = '';
+                      widget.app.search('');
                     }),
                   ),
           ),
@@ -161,6 +164,18 @@ class _SearchPageState extends State<SearchPage> {
           ),
         ),
         if (searching) ...[
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              icon: const Icon(Icons.arrow_back),
+              label: const Text('Back'),
+              onPressed: () => setState(() {
+                query.clear();
+                term = '';
+                widget.app.search('');
+              }),
+            ),
+          ),
           const SectionTitle('In your library'),
           if (localMatches.isEmpty)
             const ListTile(title: Text('No downloaded songs match.')),
@@ -214,7 +229,9 @@ class _SearchPageState extends State<SearchPage> {
             const ListTile(
               title: Text('Playlists you create or download appear here.'),
             ),
-          for (final folder in app.playlistFolders)
+          for (final folder in app.playlistFolders.take(
+            showAllPlaylistFolders ? app.playlistFolders.length : 4,
+          ))
             FolderTile(
               icon: Icons.folder_outlined,
               title: folder.title,
@@ -222,8 +239,23 @@ class _SearchPageState extends State<SearchPage> {
                   '${app.library.where((track) => track.playlists.any((entry) => entry.id == folder.id)).length} songs',
               onTap: () => openPlaylistFolderPage(context, app, folder),
             ),
+          if (app.playlistFolders.length > 4)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: () => setState(
+                  () => showAllPlaylistFolders = !showAllPlaylistFolders,
+                ),
+                child: Text(
+                  showAllPlaylistFolders
+                      ? 'Show less'
+                      : 'See all ${app.playlistFolders.length}',
+                ),
+              ),
+            ),
           const SectionTitle('Storage folders'),
-          for (final entry in physical.entries)
+          for (final entry in physical.entries
+              .take(showAllStorageFolders ? physical.length : 4))
             FolderTile(
               icon: Icons.folder_open_outlined,
               title: entry.value.first.folderName.isNotEmpty
@@ -237,6 +269,20 @@ class _SearchPageState extends State<SearchPage> {
                 entry.value.first.folderName.isNotEmpty
                     ? entry.value.first.folderName
                     : entry.key,
+              ),
+            ),
+          if (physical.length > 4)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: () => setState(
+                  () => showAllStorageFolders = !showAllStorageFolders,
+                ),
+                child: Text(
+                  showAllStorageFolders
+                      ? 'Show less'
+                      : 'See all ${physical.length}',
+                ),
               ),
             ),
         ],

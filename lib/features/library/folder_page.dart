@@ -23,7 +23,13 @@ class FolderPage extends StatelessWidget {
       builder: (context, _) {
         final tracks = resolveTracks(app);
         return Scaffold(
-          appBar: AppBar(title: Text(title)),
+          appBar: AppBar(
+            title: Text(title),
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: app.closeFolderPage,
+            ),
+          ),
           body: tracks.isEmpty
               ? const Center(child: Text('No songs in this folder.'))
               : ListView.builder(
@@ -46,17 +52,16 @@ void openPlaylistFolderPage(
   AppController app,
   PlaylistRef folder,
 ) {
-  Navigator.of(context).push(
-    MaterialPageRoute(
-      builder: (_) => FolderPage(
-        app: app,
-        title: folder.title,
-        resolveTracks: (app) => app.library
-            .where(
-              (track) => track.playlists.any((entry) => entry.id == folder.id),
-            )
-            .toList(),
-      ),
+  app.openFolderOverlay(
+    FolderPage(
+      app: app,
+      title: folder.title,
+      resolveTracks: (app) => app.library
+          .where(
+            (track) =>
+                track.playlists.any((entry) => entry.id == folder.id),
+          )
+          .toList(),
     ),
   );
 }
@@ -67,18 +72,16 @@ void openStorageFolderPage(
   String folderPath,
   String title,
 ) {
-  Navigator.of(context).push(
-    MaterialPageRoute(
-      builder: (_) => FolderPage(
-        app: app,
-        title: title,
-        resolveTracks: (app) => app.library.where((track) {
-          final trackFolder = track.folder.isNotEmpty
-              ? track.folder
-              : track.path.substring(0, track.path.lastIndexOf('/'));
-          return trackFolder == folderPath;
-        }).toList(),
-      ),
+  app.openFolderOverlay(
+    FolderPage(
+      app: app,
+      title: title,
+      resolveTracks: (app) => app.library.where((track) {
+        final trackFolder = track.folder.isNotEmpty
+            ? track.folder
+            : track.path.substring(0, track.path.lastIndexOf('/'));
+        return trackFolder == folderPath;
+      }).toList(),
     ),
   );
 }
