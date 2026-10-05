@@ -1,0 +1,24 @@
+name: own_yute
+description: Search, download, and organize music on Linux and Android.
+publish_to: none
+version: 1.0.1+2
+environment:
+  sdk: ^3.13.3
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^3.3.2
+  drift: ^2.34.1
+  drift_flutter: ^0.3.1
+  file_picker: ^11.0.3
+  path: ^1.9.1
+  path_provider: ^2.1.6
+  crypto: ^3.0.7
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  drift_dev: ^2.34.0
+  build_runner: ^2.15.1
+flutter:
+  uses-material-design: true
