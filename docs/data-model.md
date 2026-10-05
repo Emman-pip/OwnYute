@@ -1,6 +1,6 @@
 # Data Model
 
-All domain types live in `lib/core/models.dart` and are JSON-serialized into the drift database. The database is intentionally schema-light: four tables store JSON blobs keyed by an identifier, which keeps migrations simple and records forward-compatible.
+All domain types live in `lib/core/models.dart` and are JSON-serialized into the drift database. The database is intentionally schema-light: five tables store JSON blobs keyed by an identifier, which keeps migrations simple and records forward-compatible.
 
 ## Domain models
 
@@ -61,7 +61,7 @@ A saved audio file in the local library.
 
 ## Database schema
 
-`lib/core/database.dart` defines four drift tables (`schemaVersion = 1`):
+`lib/core/database.dart` defines five drift tables (`schemaVersion = 2`; version 2 added `play_history_rows`):
 
 | Table | Primary key | Payload |
 | --- | --- | --- |

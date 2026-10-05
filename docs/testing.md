@@ -51,8 +51,33 @@ Each tool is a runnable Dart entry point with a matching test wrapper.
 - **Real tooling where it matters:** the download and metadata paths are validated against actual FFmpeg output.
 - **Widget-level regression coverage:** layout and dialog tests guard against overflows and lost state during animations.
 
+## Widget tests and drift
+
+`AppController.initialize()` awaits real drift and file-system futures. Inside `testWidgets` the binding's fake-async zone never lets those complete, so a bare `await app.initialize()` hangs until the 10-minute test timeout. Wrap it in `tester.runAsync`:
+
+```dart
+late AppController app;
+await tester.runAsync(() async {
+  app = AppController(database: database);
+  await app.initialize();
+});
+await tester.pumpWidget(/* ... */);
+```
+
+When a test only needs to render a page, skip `initialize()` entirely and assign state directly (`app.library = [...]`), as `library_search_test.dart` does.
+
+Creating several `AppDatabase.forTesting(NativeDatabase.memory())` instances in one file prints a drift *"created the database class AppDatabase multiple times"* warning. It is benign noise.
+
+## Known baseline failures
+
+`flutter test` is not green on a clean checkout:
+
+- `test/app_controller_test.dart` — `staged search loads a small first batch and pages on demand` fails (`Expected: <1> Actual: <2>`). `FakeYoutube` counts a search as "full" when `songs == 0 || playlists == 0`, so the full playlist fetch also increments the counter.
+- `test/layout_test.dart` — all tests hang and time out, because they call `app.initialize()` outside `tester.runAsync` (see above).
+
 ## Conventions
 
 - Test files are named `*_test.dart`.
 - New behavior should come with a test that would fail without the change.
-- Run `flutter analyze` and `flutter test` before submitting changes.
+- Run `flutter analyze` and `flutter test` before submitting changes. Bare `flutter test` covers `test/` only; the `tool/verify_*_test.dart` wrappers must be named explicitly.
+- Do not run `dart format .` across the repo — the tree is not format-clean at HEAD, so it creates a large unrelated diff. Format only the files you changed.

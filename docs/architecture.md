@@ -45,7 +45,7 @@ OwnYute follows a layered architecture: a thin Flutter UI, a central application
 
 ### 2. Application controller
 
-`AppController` (`lib/core/app_controller.dart`, ~820 lines) is the core of the app. Responsibilities:
+`AppController` (`lib/core/app_controller.dart`, the largest file in the repo) is the core of the app. Responsibilities:
 
 - Load and persist settings, queue, library, and history on startup.
 - Drive search, playlist parsing, preview resolution, and metadata edits.
