@@ -49,19 +49,19 @@ for argument in "$@"; do
 done
 target=$(printf '%s' "$output" | sed 's/%(ext)s/wav/')
 cp "$(dirname "$0")/fixture.wav" "$target"
+cp "$(dirname "$0")/cover.jpg" "$(dirname "$target")/source.jpg"
 printf '[download] 100.0%%\n'
 ''');
     final executable = await Process.run('chmod', ['+x', stub.path]);
     check(executable.exitCode == 0, 'Could not prepare yt-dlp fixture');
     final destination = Directory('${scratch.path}/music');
     final downloader = DownloadService(ytDlpExecutable: stub.path);
-    final song = Track(
+    const song = Track(
       id: 'fixture',
       url: 'https://youtu.be/fixture',
       title: 'Sample',
       artist: 'Test Artist',
       album: 'Test Album',
-      artwork: cover.path,
     );
     final first = await downloader.download(
       song,

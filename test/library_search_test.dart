@@ -26,8 +26,8 @@ void main() {
         home: Scaffold(body: LibraryPage(app: app)),
       ),
     );
-    expect(find.text('Blue Sky'), findsWidgets);
-    expect(find.text('Pink Cloud'), findsWidgets);
+    expect(find.text('Blue Sky'), findsNothing);
+    expect(find.text('Pink Cloud'), findsNothing);
     await tester.enterText(find.byType(TextField), 'morning');
     await tester.pump();
     expect(find.text('Blue Sky'), findsWidgets);
@@ -36,7 +36,7 @@ void main() {
     app.dispose();
   });
 
-  testWidgets('all songs stay open and multi-select adds them to a playlist', (
+  testWidgets('all songs start collapsed and multi-select expands them', (
     tester,
   ) async {
     final database = AppDatabase.forTesting(NativeDatabase.memory());
@@ -56,13 +56,14 @@ void main() {
       ),
     );
 
-    expect(find.text('Blue Sky'), findsWidgets);
-    expect(find.text('Pink Cloud'), findsWidgets);
-    expect(find.widgetWithText(ExpansionTile, '2 songs'), findsNothing);
-    expect(find.text('Import folder'), findsNothing);
+    expect(find.text('Blue Sky'), findsNothing);
+    expect(find.text('Pink Cloud'), findsNothing);
+    expect(find.widgetWithText(ExpansionTile, '2 songs'), findsOneWidget);
 
     await tester.tap(find.text('Select'));
-    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(find.text('Blue Sky'), findsWidgets);
+    expect(find.text('Pink Cloud'), findsWidgets);
     expect(find.byType(Checkbox), findsNWidgets(2));
     await tester.tap(find.text('Select all visible songs'));
     await tester.pump();

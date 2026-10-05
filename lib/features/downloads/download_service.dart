@@ -82,6 +82,7 @@ class DownloadService {
           '--ignore-config',
           '--no-playlist',
           '--newline',
+          '--write-thumbnail',
           '-f',
           'bestaudio/best',
           '-o',
@@ -96,48 +97,61 @@ class DownloadService {
         },
       );
       if (_cancelled) throw const DownloadFailure('Download cancelled.');
-      final sources = await scratch
+      final outputFiles = await scratch
           .list()
+          .where((entity) => entity is File)
+          .cast<File>()
+          .toList();
+      const imageExtensions = {
+        '.avif',
+        '.bmp',
+        '.gif',
+        '.jpeg',
+        '.jpg',
+        '.png',
+        '.webp',
+      };
+      final sources = outputFiles
           .where(
-            (entity) =>
-                entity is File && p.basename(entity.path).startsWith('source.'),
+            (file) =>
+                p.basename(file.path).startsWith('source.') &&
+                !imageExtensions.contains(p.extension(file.path).toLowerCase()),
           )
           .toList();
       if (sources.isEmpty) {
         throw const DownloadFailure('yt-dlp did not create an audio file.');
       }
       final temporaryMp3 = p.join(scratch.path, 'finished.mp3');
-      final cover = await _artworkFile(track.artwork, scratch);
+      File? cover;
+      try {
+        cover = await _artworkFile(track.artwork, scratch);
+      } catch (_) {
+        // Artwork is best-effort and must not prevent the audio download.
+      }
+      final downloadedCovers = outputFiles
+          .where(
+            (file) =>
+                p.basename(file.path).startsWith('source.') &&
+                imageExtensions.contains(p.extension(file.path).toLowerCase()),
+          )
+          .toList();
+      if (cover == null && downloadedCovers.isNotEmpty) {
+        for (final candidate in downloadedCovers) {
+          if (await candidate.length() <= 10 * 1024 * 1024) {
+            cover = candidate;
+            break;
+          }
+        }
+      }
       if (_cancelled) throw const DownloadFailure('Download cancelled.');
-      await _run(ffmpegExecutable, [
-        '-hide_banner',
-        '-loglevel',
-        'error',
-        '-y',
-        '-i',
-        sources.first.path,
-        if (cover != null) ...['-i', cover.path],
-        if (cover != null) ...['-map', '0:a:0', '-map', '1:v:0'] else '-vn',
-        '-codec:a',
-        'libmp3lame',
-        '-qscale:a',
-        '0',
-        if (cover != null) ...[
-          '-codec:v',
-          'mjpeg',
-          '-disposition:v',
-          'attached_pic',
-          '-id3v2_version',
-          '3',
-        ],
-        '-metadata',
-        'title=${track.title}',
-        '-metadata',
-        'artist=${track.artist}',
-        '-metadata',
-        'album=${track.album}',
-        temporaryMp3,
-      ]);
+      try {
+        await _convertDownload(sources.first.path, temporaryMp3, track, cover);
+      } on DownloadFailure {
+        if (cover == null || _cancelled) rethrow;
+        final failed = File(temporaryMp3);
+        if (await failed.exists()) await failed.delete();
+        await _convertDownload(sources.first.path, temporaryMp3, track, null);
+      }
       if (_cancelled) throw const DownloadFailure('Download cancelled.');
       onProgress(0.95);
       if (Platform.isAndroid) {
@@ -169,6 +183,41 @@ class DownloadService {
       _active = null;
     }
   }
+
+  Future<void> _convertDownload(
+    String source,
+    String output,
+    Track track,
+    File? cover,
+  ) => _run(ffmpegExecutable, [
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    '-y',
+    '-i',
+    source,
+    if (cover != null) ...['-i', cover.path],
+    if (cover != null) ...['-map', '0:a:0', '-map', '1:v:0'] else '-vn',
+    '-codec:a',
+    'libmp3lame',
+    '-qscale:a',
+    '0',
+    if (cover != null) ...[
+      '-codec:v',
+      'mjpeg',
+      '-disposition:v',
+      'attached_pic',
+      '-id3v2_version',
+      '3',
+    ],
+    '-metadata',
+    'title=${track.title}',
+    '-metadata',
+    'artist=${track.artist}',
+    '-metadata',
+    'album=${track.album}',
+    output,
+  ]);
 
   Future<void> editMetadata(LibraryTrack track) async {
     if (!Platform.isLinux && !Platform.isAndroid) {

@@ -20,6 +20,7 @@ class _LibraryPageState extends State<LibraryPage> {
   AppController get app => widget.app;
   String query = '';
   final searchController = TextEditingController();
+  final allSongsController = ExpansibleController();
   final selectedPaths = <String>{};
   bool selecting = false;
 
@@ -325,7 +326,12 @@ class _LibraryPageState extends State<LibraryPage> {
                     }),
                   ),
           ),
-          onChanged: (value) => setState(() => query = value),
+          onChanged: (value) {
+            setState(() => query = value);
+            if (app.library.isNotEmpty && value.trim().isNotEmpty) {
+              allSongsController.expand();
+            }
+          },
         ),
         if (app.library.isEmpty)
           const ListTile(
@@ -345,10 +351,13 @@ class _LibraryPageState extends State<LibraryPage> {
                   ),
                 ),
                 TextButton.icon(
-                  onPressed: () => setState(() {
-                    selecting = !selecting;
-                    if (!selecting) selectedPaths.clear();
-                  }),
+                  onPressed: () {
+                    setState(() {
+                      selecting = !selecting;
+                      if (!selecting) selectedPaths.clear();
+                    });
+                    if (selecting) allSongsController.expand();
+                  },
                   icon: Icon(selecting ? Icons.close : Icons.checklist),
                   label: Text(selecting ? 'Cancel' : 'Select'),
                 ),
@@ -391,13 +400,12 @@ class _LibraryPageState extends State<LibraryPage> {
               ),
             ),
           Card(
-            child: Column(
+            child: ExpansionTile(
+              controller: allSongsController,
+              initiallyExpanded: false,
+              leading: const Icon(Icons.library_music),
+              title: Text('${visible.length} songs'),
               children: [
-                ListTile(
-                  leading: const Icon(Icons.library_music),
-                  title: Text('${visible.length} songs'),
-                ),
-                const Divider(height: 1),
                 for (final track in visible)
                   _track(context, track, visible, allowSelection: true),
               ],
