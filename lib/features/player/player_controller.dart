@@ -42,6 +42,16 @@ class PlayerController extends ChangeNotifier {
   final bool _isAndroid;
   final MethodChannel _android;
   final List<Track> queue = [];
+
+  /// Tracks that already finished, oldest first, so **Previous** still has
+  /// somewhere to go after they leave [queue]. In memory only: the snapshot
+  /// keeps the live queue and nothing depends on history surviving a restart.
+  final List<Track> history = [];
+
+  /// How many finished tracks to keep. Bounded so a long session that never
+  /// restarts the app cannot grow this without limit.
+  static const int historyLimit = 50;
+
   Track? current;
   Process? _process;
   Timer? _timer;
@@ -95,6 +105,38 @@ class PlayerController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Keeps the current track at the head of [queue] and moves everything the
+  /// user has already heard into [history].
+  ///
+  /// The queue is shown as "what plays from here", so a track belongs at index
+  /// zero while it is playing and must not linger once it is done. Songs
+  /// skipped by jumping ahead land in history too, which is what lets
+  /// **Previous** return to one of them.
+  void _normalizeQueue() {
+    final track = current;
+    if (track == null) {
+      queue.clear();
+      return;
+    }
+    final index = queue.indexOf(track);
+    if (index < 0) {
+      // The current track is not in the queue (a swap, or a restore that lost
+      // it). Put it back at the head rather than dropping playback.
+      queue.insert(0, track);
+      return;
+    }
+    if (index == 0) return;
+    _remember(queue.sublist(0, index));
+    queue.removeRange(0, index);
+  }
+
+  void _remember(Iterable<Track> finished) {
+    history.addAll(finished);
+    if (history.length > PlayerController.historyLimit) {
+      history.removeRange(0, history.length - PlayerController.historyLimit);
+    }
+  }
+
   Future<void> playTracks(List<Track> tracks, int index) async {
     queue
       ..clear()
@@ -104,6 +146,8 @@ class PlayerController extends ChangeNotifier {
     position = Duration.zero;
     duration = Duration(seconds: current!.duration);
     _source = null;
+    // Starting part way in means the songs before it are already passed.
+    _normalizeQueue();
     await _start();
     unawaited(_saveSnapshot());
     unawaited(_fillLocalDuration(current!));
@@ -151,6 +195,7 @@ class PlayerController extends ChangeNotifier {
     position = Duration.zero;
     duration = Duration(seconds: current!.duration);
     _source = null;
+    _normalizeQueue();
     await _start();
     unawaited(_saveSnapshot());
     unawaited(_fillLocalDuration(current!));
@@ -191,18 +236,23 @@ class PlayerController extends ChangeNotifier {
     if (removingCurrent) await _stopProcess();
     queue.removeAt(index);
     if (removingCurrent) {
-      current = queue.isEmpty ? null : queue[index.clamp(0, queue.length - 1)];
+      // The head is gone, so the next track up takes over playback.
+      current = queue.isEmpty ? null : queue.first;
       position = Duration.zero;
       duration = Duration(seconds: current?.duration ?? 0);
       _source = null;
       if (wasActive && current != null) await _start();
     }
+    _normalizeQueue();
     notifyListeners();
     unawaited(_saveSnapshot());
   }
 
   void reorder(int oldIndex, int newIndex) {
     if (oldIndex < 0 || oldIndex >= queue.length) return;
+    // Index zero is the playing track, and the queue is shown current-first.
+    // Moving anything across it would break that reading of the list.
+    if (oldIndex == 0 || newIndex == 0) return;
     final bounded = newIndex.clamp(0, queue.length - 1);
     final track = queue.removeAt(oldIndex);
     queue.insert(bounded, track);
@@ -400,6 +450,10 @@ class PlayerController extends ChangeNotifier {
         ..clear()
         ..addAll(restored);
       current = restored[index];
+      // The snapshot stores an index into the whole queue. Re-normalizing on
+      // load is what keeps "current first" true after a restart instead of
+      // resurrecting the old ordering.
+      _normalizeQueue();
       position = Duration(
         milliseconds: (data['positionMs'] as num?)?.toInt() ?? 0,
       );
@@ -438,6 +492,9 @@ class PlayerController extends ChangeNotifier {
               savedSource != null) {
             final match = queue.indexWhere((track) => track.title == liveTitle);
             if (match >= 0) current = queue[match];
+            // The notification may have advanced while the app was gone, so the
+            // live track is not the one the snapshot saved.
+            _normalizeQueue();
           }
         }
       } else if (Platform.isLinux) {
@@ -548,15 +605,21 @@ class PlayerController extends ChangeNotifier {
 
   Future<void> next() async {
     if (queue.isEmpty || current == null) return;
-    final index = queue.indexOf(current!);
+    // The queue is current-first, so the next track is always index one.
     if (shuffle && queue.length > 1) {
-      current =
-          queue[(index + 1 + DateTime.now().millisecond % (queue.length - 1)) %
-              queue.length];
-    } else if (index + 1 < queue.length) {
-      current = queue[index + 1];
-    } else if (repeat) {
-      current = queue.first;
+      final pick = 1 + DateTime.now().millisecond % (queue.length - 1);
+      current = queue[pick];
+    } else if (queue.length > 1) {
+      current = queue[1];
+    } else if (repeat && history.isNotEmpty) {
+      // Nothing left to play, so start the set over: the finished tracks come
+      // back in the order they were heard, with the track that just ended at
+      // the end of the set rather than dropped from it.
+      final restarting = [...history, current!];
+      queue
+        ..clear()
+        ..addAll(restarting);
+      current = restarting.first;
     } else {
       await _stopProcess();
       notifyListeners();
@@ -565,17 +628,29 @@ class PlayerController extends ChangeNotifier {
     _source = null;
     position = Duration.zero;
     duration = Duration(seconds: current!.duration);
+    _normalizeQueue();
     await _start();
     unawaited(_saveSnapshot());
   }
 
   Future<void> previous() async {
     if (queue.isEmpty || current == null) return;
-    final index = queue.indexOf(current!);
-    current = queue[index > 0 ? index - 1 : 0];
+    // With the current track pinned to the top, going back means taking the
+    // most recent finished track off the history and putting it in front.
+    final Track? back;
+    if (history.isNotEmpty) {
+      back = history.removeLast();
+      queue.insert(0, back);
+    } else {
+      // Nothing heard yet, so restart what is playing.
+      back = current;
+    }
+    final outgoing = current!;
+    current = back;
     _source = null;
     position = Duration.zero;
     duration = Duration(seconds: current!.duration);
+    if (!identical(back, outgoing)) _remember([outgoing]);
     await _start();
     unawaited(_saveSnapshot());
   }

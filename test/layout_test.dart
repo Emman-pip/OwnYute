@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:own_yute/core/app_controller.dart';
 import 'package:own_yute/core/database.dart';
+import 'package:own_yute/core/marquee_text.dart';
 import 'package:own_yute/core/models.dart';
+import 'package:own_yute/core/track_row.dart';
 import 'package:own_yute/core/ui_helpers.dart';
 import 'package:own_yute/features/player/player_widgets.dart';
 import 'package:own_yute/main.dart';
@@ -14,8 +16,11 @@ void main() {
     tester,
   ) async {
     final database = AppDatabase.forTesting(NativeDatabase.memory());
-    final app = AppController(database: database);
-    await app.initialize();
+    late AppController app;
+    await tester.runAsync(() async {
+      app = AppController(database: database);
+      await app.initialize();
+    });
     await tester.pumpWidget(
       ProviderScope(
         overrides: [appProvider.overrideWithValue(app)],
@@ -57,7 +62,7 @@ void main() {
     app.dispose();
   });
 
-  testWidgets('queue title can wrap on a narrow phone', (tester) async {
+  testWidgets('a long queue title scrolls instead of wrapping', (tester) async {
     tester.view.physicalSize = const Size(320, 568);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -67,20 +72,18 @@ void main() {
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(
-          body: TrackTile(
-            track: Track(
-              id: 'long',
-              url: 'https://youtube.com/watch?v=long',
-              title: longTitle,
-            ),
-            fullTitle: true,
-            onTap: _noop,
-          ),
+          body: TrackTile(title: longTitle, onTap: _noop),
         ),
       ),
     );
-    final title = tester.widget<Text>(find.text(longTitle));
-    expect(title.maxLines, isNull);
+    // One line, and it travels instead of wrapping or being cut off.
+    expect(marqueeOffset(tester), 0);
+    expect(find.text(longTitle), findsNothing);
+    // The ticker starts from a post-frame callback, so the first frame only
+    // latches the loop; the second one shows motion.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(marqueeOffset(tester), greaterThan(0));
     expect(tester.takeException(), isNull);
   });
 
@@ -104,23 +107,30 @@ void main() {
         ),
       ),
     );
-    final app = AppController(database: database);
-    await app.initialize();
+    late AppController app;
+    await tester.runAsync(() async {
+      app = AppController(database: database);
+      await app.initialize();
+    });
     await tester.pumpWidget(
       ProviderScope(
         overrides: [appProvider.overrideWithValue(app)],
         child: const OwnYuteApp(),
       ),
     );
-    await tester.pumpAndSettle();
+    // Rows with a truncated title never settle, so pump a fixed window.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.text('Downloads').last);
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.text('Library').last);
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.byTooltip('Settings'));
@@ -162,9 +172,11 @@ void main() {
       ),
     );
     await tester.tap(find.text('Open playlist'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
     expect(tester.takeException(), isNull);
     expect(find.text('Select all'), findsOneWidget);
+    expect(find.text('Choose tracks (0/30)'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     app.dispose();
   });
@@ -190,3 +202,11 @@ void main() {
 }
 
 void _noop() {}
+
+/// The scroll offset of the first scrolling marquee in the tree.
+double marqueeOffset(WidgetTester tester) => tester
+    .widgetList<CustomPaint>(find.byType(CustomPaint))
+    .map((paint) => paint.painter)
+    .whereType<MarqueeTextPainter>()
+    .first
+    .offset;

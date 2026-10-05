@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import '../../core/app_controller.dart';
 import '../../core/artwork_image.dart';
 import '../../core/models.dart';
+import '../../core/track_row.dart';
 import '../../core/ui_helpers.dart';
 import '../library/folder_page.dart';
+import '../library/library_actions.dart';
 import '../library/library_widgets.dart';
 
 class SearchPage extends StatefulWidget {
@@ -20,6 +22,10 @@ class _SearchPageState extends State<SearchPage> {
   String term = '';
   bool showAllPlaylistFolders = false;
   bool showAllStorageFolders = false;
+  final selection = TrackSelection();
+
+  AppController get app => widget.app;
+
   @override
   void dispose() {
     query.dispose();
@@ -47,14 +53,48 @@ class _SearchPageState extends State<SearchPage> {
         .toList();
   }
 
+  List<LibraryTrack> _selectedMatches(List<LibraryTrack> matches) => [
+    for (final track in matches)
+      if (selection.contains(track.path)) track,
+  ];
+
+  Future<void> _assignSelected(
+    BuildContext context,
+    List<LibraryTrack> matches,
+  ) async {
+    final selected = _selectedMatches(matches);
+    if (selected.isEmpty) return;
+    final playlist = await choosePlaylist(context, app);
+    if (playlist == null) return;
+    try {
+      await app.assignManyToPlaylist(selected, playlist);
+      if (!context.mounted) return;
+      setState(selection.clear);
+    } catch (failure) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(failure.toString())));
+      }
+    }
+  }
+
+  Future<void> _deleteSelected(
+    BuildContext context,
+    List<LibraryTrack> matches,
+  ) async {
+    final selected = _selectedMatches(matches);
+    if (selected.isEmpty) return;
+    await deleteSelectedSongs(context, app, selected);
+    if (context.mounted) setState(selection.clear);
+  }
+
   Widget _recentCard(BuildContext context, Track track, List<Track> group) {
     return SizedBox(
       width: 120,
       child: Card(
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: () =>
-              widget.app.player.playTracks(group, group.indexOf(track)),
+          onTap: () => app.player.playTracks(group, group.indexOf(track)),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -94,16 +134,10 @@ class _SearchPageState extends State<SearchPage> {
 
   @override
   Widget build(BuildContext context) {
-    final app = widget.app;
     final searching = term.isNotEmpty;
     final localMatches = _localMatches;
-    final physical = <String, List<LibraryTrack>>{};
-    for (final track in app.library) {
-      final folder = track.folder.isNotEmpty
-          ? track.folder
-          : track.path.substring(0, track.path.lastIndexOf('/'));
-      (physical[folder] ??= []).add(track);
-    }
+    selection.sync(localMatches.map((track) => track.path));
+    final physical = app.storageFolderGroups;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -179,23 +213,69 @@ class _SearchPageState extends State<SearchPage> {
           const SectionTitle('In your library'),
           if (localMatches.isEmpty)
             const ListTile(title: Text('No downloaded songs match.')),
+          if (localMatches.isNotEmpty && selection.active)
+            SelectionBar(
+              count: selection.count,
+              deleting: app.deletingTotal > 0,
+              progress: app.deleteProgress,
+              onAddToPlaylist: () => _assignSelected(context, localMatches),
+              onDelete: () => _deleteSelected(context, localMatches),
+            ),
           for (final track in localMatches)
-            LibraryTrackTile(app: app, track: track, group: localMatches),
+            LibraryTrackRow(
+              app: app,
+              track: track,
+              group: localMatches,
+              selectionMode: selection.active,
+              selected: selection.contains(track.path),
+              onSelect: () => setState(() => selection.toggle(track.path)),
+              onLongPress: () => setState(() => selection.toggle(track.path)),
+            ),
           const SectionTitle('Songs'),
           if (app.songs.isEmpty && !app.songsLoading)
             const ListTile(title: Text('No YouTube songs found.')),
           ...app.songs.map(
             (track) => TrackTile(
-              track: track,
+              title: track.title,
+              subtitle: track.artist,
+              artwork: track.artwork,
               onTap: () => showTrackDialog(context, app, track, widget.onQueue),
-              onAddToPlaybackQueue: () {
-                app.player.addToQueue(track);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('${track.title} added to playback queue.'),
-                  ),
-                );
-              },
+              pinned: TrackAction(
+                tooltip: app.isInDownloadQueue(track)
+                    ? 'In the download queue'
+                    : 'Save offline',
+                icon: app.isInDownloadQueue(track)
+                    ? Icons.download_done
+                    : Icons.download_for_offline_outlined,
+                onPressed: app.isInDownloadQueue(track)
+                    ? null
+                    : () async {
+                        await app.saveOffline(track);
+                        if (!context.mounted) return;
+                        showFeedback(
+                          context,
+                          '${track.title} queued for download.',
+                        );
+                      },
+              ),
+              actions: [
+                TrackAction(
+                  tooltip: 'Add to playback queue',
+                  icon: Icons.queue_music,
+                  onPressed: () {
+                    app.player.addToQueue(track);
+                    showFeedback(
+                      context,
+                      '${track.title} added to playback queue.',
+                    );
+                  },
+                ),
+                TrackAction(
+                  tooltip: 'Preview',
+                  icon: Icons.play_arrow,
+                  onPressed: () => app.player.playTracks([track], 0),
+                ),
+              ],
             ),
           ),
           if (!app.songsExhausted)
@@ -218,18 +298,15 @@ class _SearchPageState extends State<SearchPage> {
           const SectionTitle('Playlists'),
           ...app.playlists.map(
             (track) => TrackTile(
-              track: track,
-              onTap: () async {
-                await app.openPlaylist(track);
-                if (context.mounted && app.picker.isNotEmpty) {
-                  await showPlaylistDialog(
-                    context,
-                    app,
-                    app.picker,
-                    widget.onQueue,
-                  );
-                }
-              },
+              title: track.title,
+              subtitle: track.artist,
+              artwork: track.artwork,
+              onTap: () => _openPlaylist(track),
+              pinned: TrackAction(
+                tooltip: 'Choose tracks from this playlist',
+                icon: Icons.playlist_add_check,
+                onPressed: () => _openPlaylist(track),
+              ),
             ),
           ),
           if (!app.playlistsExhausted)
@@ -331,5 +408,12 @@ class _SearchPageState extends State<SearchPage> {
         ],
       ],
     );
+  }
+
+  Future<void> _openPlaylist(Track playlist) async {
+    await app.openPlaylist(playlist);
+    if (mounted && app.picker.isNotEmpty) {
+      await showPlaylistDialog(context, app, app.picker, widget.onQueue);
+    }
   }
 }

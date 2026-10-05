@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/app_controller.dart';
 import '../../core/models.dart';
+import '../../core/track_row.dart';
 import '../../core/ui_helpers.dart';
 import '../downloads/download_service.dart';
 
@@ -50,7 +51,16 @@ class _QueuePageState extends State<QueuePage> {
         title: name,
       );
     }
-    await widget.app.assignQueuedToPlaylist(item.track.id, folder);
+    try {
+      await widget.app.assignQueuedToPlaylist(item.track.id, folder);
+      if (!context.mounted) return;
+      showFeedback(context, '${item.track.title} added to ${folder.title}.');
+    } catch (failure) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(failure.toString())));
+      }
+    }
   }
 
   Future<void> _editBatch(BuildContext context, String? batchId) async {
@@ -131,11 +141,50 @@ class _QueuePageState extends State<QueuePage> {
     });
   }
 
+  List<TrackAction> _actions(
+    BuildContext context,
+    QueueItem item,
+    String? batchId,
+  ) => [
+    TrackAction(
+      tooltip: 'Edit metadata',
+      icon: Icons.edit_outlined,
+      onPressed: () async {
+        final edited = await editTrackDialog(
+          context,
+          item.track,
+          pickArtwork: widget.app.pickArtwork,
+        );
+        if (edited != null) await widget.app.editQueue(edited);
+      },
+    ),
+    TrackAction(
+      tooltip: 'Add to playlist folder',
+      icon: Icons.playlist_add,
+      onPressed: () => _assign(context, item),
+    ),
+    TrackAction(
+      tooltip: 'Add to playback queue',
+      icon: Icons.queue_music,
+      onPressed: () {
+        widget.app.player.addToQueue(item.track);
+        showFeedback(context, '${item.track.title} added to playback queue.');
+      },
+    ),
+    TrackAction(
+      tooltip: 'Remove from group',
+      icon: Icons.remove_circle_outline,
+      onPressed: () =>
+          widget.app.removeFromGroup(item.track.id, batchId: batchId),
+    ),
+  ];
+
   Widget _row(BuildContext context, QueueItem item, String? batchId) => Column(
     children: [
       TrackTile(
-        track: item.track,
-        fullTitle: true,
+        title: item.track.title,
+        subtitle: item.track.artist,
+        artwork: item.track.artwork,
         onTap: () async {
           final edited = await editTrackDialog(
             context,
@@ -144,22 +193,7 @@ class _QueuePageState extends State<QueuePage> {
           );
           if (edited != null) await widget.app.editQueue(edited);
         },
-        trailing: PopupMenuButton<String>(
-          tooltip: 'Song actions',
-          onSelected: (action) {
-            if (action == 'assign') _assign(context, item);
-            if (action == 'remove') {
-              widget.app.removeFromGroup(item.track.id, batchId: batchId);
-            }
-          },
-          itemBuilder: (context) => const [
-            PopupMenuItem(
-              value: 'assign',
-              child: Text('Add to playlist folder'),
-            ),
-            PopupMenuItem(value: 'remove', child: Text('Remove from group')),
-          ],
-        ),
+        actions: _actions(context, item, batchId),
       ),
       if (item.targetPlaylists.isNotEmpty)
         Padding(
@@ -168,6 +202,8 @@ class _QueuePageState extends State<QueuePage> {
             alignment: Alignment.centerLeft,
             child: Text(
               'Playlists: ${item.targetPlaylists.map((folder) => folder.title).join(', ')}',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
@@ -181,6 +217,8 @@ class _QueuePageState extends State<QueuePage> {
             alignment: Alignment.centerLeft,
             child: Text(
               '${item.error}\nRetry on next download',
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ),
@@ -258,14 +296,18 @@ class _QueuePageState extends State<QueuePage> {
           overflow: TextOverflow.ellipsis,
         ),
         const SizedBox(height: 8),
-        Row(
+        // Wraps instead of overflowing: these three do not fit one line on a
+        // 320dp phone.
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          runSpacing: 8,
           children: [
             OutlinedButton.icon(
               onPressed: app.chooseDestination,
               icon: const Icon(Icons.folder_open),
               label: const Text('Folder'),
             ),
-            const SizedBox(width: 8),
             FilledButton.icon(
               onPressed: app.queue.isEmpty || app.downloading
                   ? null
@@ -273,7 +315,6 @@ class _QueuePageState extends State<QueuePage> {
               icon: const Icon(Icons.download),
               label: const Text('Download'),
             ),
-            const Spacer(),
             PopupMenuButton<String>(
               tooltip: 'Queue actions',
               onSelected: (action) {

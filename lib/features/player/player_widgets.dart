@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/app_controller.dart';
 import '../../core/artwork_image.dart';
+import '../../core/marquee_text.dart';
 import '../../core/models.dart';
 
 class MiniPlayer extends StatelessWidget {
@@ -313,7 +314,14 @@ class _PlayerSheetState extends State<PlayerSheet> {
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const Spacer(),
-                Text('${player.queue.length} tracks'),
+                // The queue only holds what has not played yet, so say which it
+                // is rather than implying the list is the whole set.
+                Text(
+                  player.history.isEmpty
+                      ? '${player.queue.length} tracks'
+                      : '${player.queue.length} left'
+                            '${player.history.length == 1 ? ' · 1 played' : ' · ${player.history.length} played'}',
+                ),
               ],
             ),
             const SizedBox(height: 4),
@@ -325,10 +333,14 @@ class _PlayerSheetState extends State<PlayerSheet> {
               onReorderItem: player.reorder,
               itemBuilder: (context, index) {
                 final queued = player.queue[index];
+                final playing = identical(queued, track);
                 return ListTile(
-                  key: ObjectKey(queued),
+                  // Indexed as well as identified: `addToQueue` does not
+                  // de-duplicate, so the same Track instance can legitimately
+                  // appear twice and `ObjectKey` alone would collide.
+                  key: ValueKey('$index:${queued.url}'),
                   dense: true,
-                  selected: identical(queued, track),
+                  selected: playing,
                   selectedTileColor: Theme.of(context)
                       .colorScheme
                       .primaryContainer
@@ -336,20 +348,18 @@ class _PlayerSheetState extends State<PlayerSheet> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  leading: ReorderableDragStartListener(
-                    index: index,
-                    child: const Icon(Icons.drag_handle),
-                  ),
-                  title: Text(
-                    queued.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: Text(
-                    queued.artist,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  // The playing track is pinned to the top and `reorder`
+                  // refuses to move it, so it offers no drag handle.
+                  leading: playing
+                      ? const Icon(Icons.graphic_eq, size: 20)
+                      : ReorderableDragStartListener(
+                          index: index,
+                          child: const Icon(Icons.drag_handle),
+                        ),
+                  title: MarqueeText(queued.title),
+                  subtitle: playing
+                      ? const Text('Now playing')
+                      : MarqueeText(queued.artist),
                   trailing: IconButton(
                     tooltip: 'Remove from playback queue',
                     icon: const Icon(Icons.close),

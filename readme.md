@@ -32,7 +32,7 @@ Batch downloads are grouped and collapsible; individual additions appear under *
 
 ### Library
 
-**All songs** starts collapsed, followed by virtual playlist folders and physical storage folders. Folder tiles open a dedicated page with their tracks. Use **Select** to pick several songs and add them to a playlist in one step. The library search is limited to downloaded songs and shows only matching results.
+**All songs** starts collapsed, followed by virtual playlist folders and physical storage folders. Folder tiles open a dedicated page with their tracks, and a long press there selects songs in that folder on its own. Use **Select** (or a long press on any song) to pick several songs, then add them to a playlist or delete them together. The library search is limited to downloaded songs and shows only matching results.
 
 | Library | All songs expanded | Multi-select |
 | --- | --- | --- |
@@ -40,7 +40,7 @@ Batch downloads are grouped and collapsible; individual additions appear under *
 
 ### Player
 
-A persistent mini player while you browse, with a polished expanded view for seek, previous/next, shuffle, repeat, and a reorderable playback queue. Songs expose queue buttons; tracks can be removed or dragged into a new order without changing the separate Downloads list. A streamed preview also offers **Save offline**, which adds it to Downloads and opens that tab without creating duplicates.
+A persistent mini player while you browse, with a polished expanded view for seek, previous/next, shuffle, repeat, and a reorderable playback queue. The queue reads as *what plays from here*: the current song is pinned at the top and marked **Now playing**, and a song leaves the list once it finishes, with the header counting what is left and what has played. **Previous** steps back through recently finished songs even though they are no longer listed, **Repeat** starts the set over when the queue runs out, and the rest of the list can still be dragged into a new order. None of this touches the separate Downloads list. A streamed preview also offers **Save offline**, which adds it to Downloads and opens that tab without creating duplicates.
 
 | Expanded player | Mini player |
 | --- | --- |
@@ -51,6 +51,33 @@ A persistent mini player while you browse, with a polished expanded view for see
 Seven color schemes, including complementary dark blue and dark pink.
 
 ![Settings and themes](docs/images/10-settings.png)
+
+## Rows and row actions
+
+Every list of songs uses the same row: artwork, a scrolling title and artist, and
+one or two buttons on the right.
+
+- **Long titles scroll.** A title that does not fit travels sideways, pauses at
+  each end, and starts again. It stops while you hold the row, and it becomes a
+  plain ellipsis if the system asks for reduced motion.
+- **On a phone, swipe a row left** to slide it aside and reveal its actions. Past
+  about half the strip it stays open; a shorter swipe springs back. Pulling
+  further than the strip is open resists like a rubber band instead of running
+  off, and **any scroll snaps an open row shut** so it never rides along
+  displaced. A vertical swipe still scrolls the list.
+- **On desktop, every row has a `⋮` menu** with the same actions, so nothing
+  depends on discovering a gesture. The swipe also works with a mouse or
+  trackpad.
+- **What is where:** library songs, folder pages and library search matches offer
+  *add to playback queue, add to playlist folder, refresh artwork, edit metadata,
+  move file, delete song*. Search results pin a download button (which turns into
+  a disabled "already queued" button) and offer *add to playback queue* and
+  *preview*. Download-queue rows offer *edit metadata, add to playlist folder, add
+  to playback queue, remove from group*. Folder pages put *refresh artwork* and
+  *delete folder* behind a `⋮` in the app bar, and the storage folder list has the
+  same two behind its trailing `⋮`.
+- **A single pinned button** is the only always-visible action, and only on search
+  results.
 
 ## Linux setup
 
@@ -86,12 +113,12 @@ The current release build uses Flutter's debug signing key so it can be installe
 
 ## Use
 
-1. Search from Search, or use **Paste URL** for a YouTube song or playlist. Playlist results open a track picker with **Select all**.
-2. Preview a track with the play button. The mini player remains visible while browsing. Its expanded view provides seek, previous/next, shuffle, repeat, and the playback queue. Use the queue icon beside a song to append it, then drag or remove entries in the expanded player. Playback order and the current paused track survive a restart. A remote preview can be sent to **Downloads** with **Save offline**. Drag the seek slider and release to jump once; the player shows buffering and pauses the time bar while loading. Android plays local and streamed tracks through its background media service.
-3. Add tracks to Downloads. Long song titles wrap so the full name remains visible on a phone. Each **Add selected** action creates a collapsible batch; individual additions appear in **Singles**. A song shared by batches downloads once and appears in each batch. Use a queued song's menu to assign it to an existing or new virtual playlist folder before downloading. Edit a batch with its pencil button, or use the top menu to edit all queued items, cancel downloads, or **Clear finished items**. Clearing finished items leaves saved files and Library entries intact. Choose a destination and an optional physical folder. Existing files prompt **Skip**, **Replace**, or **Keep both**.
+1. Search from Search, or use **Paste URL** for a YouTube song or playlist. Playlist results open a track picker with **Select all**. Tap or long-press a row to choose it, then either **Preview selected** to listen to just those songs in order, or **Add selected** to queue them for download.
+2. Preview a track with the play button. The mini player remains visible while browsing. Its expanded view provides seek, previous/next, shuffle, repeat, and the playback queue. The playing song sits at the top of that queue and finished songs drop off it, so it lists what is still to come; **Previous** goes back through what already played. Append a song to the queue from its row actions, which confirms with a short message, then drag or remove entries in the expanded player. Playback order and the current paused track survive a restart. A remote preview can be sent to **Downloads** with **Save offline**. Drag the seek slider and release to jump once; the player shows buffering and pauses the time bar while loading. Android plays local and streamed tracks through its background media service.
+3. Add tracks to Downloads. Long song titles scroll sideways so the whole name stays readable on a phone. Each **Add selected** action creates a collapsible batch; individual additions appear in **Singles**. A song shared by batches downloads once and appears in each batch. Use a queued song's menu to assign it to an existing or new virtual playlist folder before downloading. Edit a batch with its pencil button, or use the top menu to edit all queued items, cancel downloads, or **Clear finished items**. Clearing finished items leaves saved files and Library entries intact. Choose a destination and an optional physical folder. Existing files prompt **Skip**, **Replace**, or **Keep both**.
 4. Downloads run sequentially. OwnYute requests the best available source audio and source thumbnail, converts the audio to high quality variable bitrate MP3 with FFmpeg, and writes title, artist, album, and the album/single cover. User-selected artwork takes priority. Artwork retrieval and embedding are best-effort, so an unavailable or unsupported cover does not prevent the music from being saved. Failed or interrupted items remain in the queue for retry.
-5. Library starts with **All songs** collapsed, followed by virtual **Playlist folders**, physical **Storage folders**, and the **Import folder** / **Import audio files** actions. Search by song, artist, album, or playlist. Use **Select** above All songs to expand the list, choose several visible tracks, and add them to one existing or new playlist folder. Downloaded playlist tracks are assigned to their source playlist folder, and the same saved file can appear in multiple playlist folders. Use a song's menu to add existing music to a playlist folder, edit metadata, choose local JPG, PNG, or WebP cover artwork (or enter an image URL), move its file, or delete it from storage and the app. The delete button on a playlist folder deletes all its member audio files and library entries, including songs shared with other playlists, after confirmation. Metadata editing briefly stops playback of that song and resumes near the previous position. A failed edit leaves the library entry and original audio in place.
-6. Choose **System**, **Light**, **Dark**, **Dark Blue**, **Dark Pink**, **Pastel Blue**, or **Pastel Pink** in Settings. Animated player artwork can be disabled and follows the device's reduced motion setting. Automatic missing-artwork lookup is also optional and enabled by default. It checks songs sequentially with conservative title/artist matching; a found cover updates the Library display and is embedded into existing audio. Artwork lookup and embedding are best-effort and never block playback or downloads. The layout adapts from phone navigation to a wider desktop rail.
+5. Library starts with **All songs** collapsed, followed by virtual **Playlist folders**, physical **Storage folders**, and the **Import folder** / **Import audio files** actions. Search by song, artist, album, or playlist. Use **Select** above All songs to expand the list, choose several visible tracks, and add them to one existing or new playlist folder. Downloaded playlist tracks are assigned to their source playlist folder, and the same saved file can appear in multiple playlist folders. Use a song's row actions to add existing music to a playback queue or a playlist folder, look up its cover art again, edit metadata, choose local JPG, PNG, or WebP cover artwork (or enter an image URL), move its file, or delete it from storage and the app. Selecting songs shows a bar with **N selected** plus **add to playlist** and **delete**: the delete confirmation names every song that also lives in a playlist folder, because deleting a file removes it from those folders too, and a progress line runs while the files are being removed. Deleting a storage folder asks the same question twice: **Remove from library** only forgets the songs and leaves the audio on disk, while **Delete files** also removes them from the device, and the dialog names the songs shared with a playlist folder. Deleting an imported folder also stops scanning it, so a later refresh does not bring the songs back. The delete button on a playlist folder deletes all its member audio files and library entries, including songs shared with other playlists, after confirmation. Metadata editing briefly stops playback of that song and resumes near the previous position. A failed edit leaves the library entry and original audio in place.
+6. Choose **System**, **Light**, **Dark**, **Dark Blue**, **Dark Pink**, **Pastel Blue**, or **Pastel Pink** in Settings. Animated player artwork can be disabled and follows the device's reduced motion setting. Automatic missing-artwork lookup is also optional and enabled by default. It checks songs sequentially with conservative title/artist matching; a found cover updates the Library display and is embedded into existing audio. You can also run the same search on demand from a song's **refresh artwork** action, or over a whole folder from a folder's `⋮`, and the library-wide **Find now** in Settings still does every missing song. Artwork lookup and embedding are best-effort and never block playback or downloads. The layout adapts from phone navigation to a wider desktop rail.
 
 ## Development checks
 

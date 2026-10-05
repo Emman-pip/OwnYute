@@ -41,8 +41,10 @@ OwnYute/
 │   │   ├── database.dart         # drift tables and queries
 │   │   ├── database.g.dart       # Generated drift code
 │   │   ├── database_factory.dart # Opens the SQLite database
+│   │   ├── marquee_text.dart     # Scrolling single-line label for long titles
 │   │   ├── models.dart           # Track, PlaylistRef, QueueItem, LibraryTrack
-│   │   ├── ui_helpers.dart       # Shared widgets and dialogs
+│   │   ├── track_row.dart        # TrackTile row + swipe strip, actions, selection bar
+│   │   ├── ui_helpers.dart       # Shared section titles and dialogs
 │   │   └── yt_dlp_manager.dart   # Nightly yt-dlp selection/verification
 │   │
 │   └── features/
@@ -107,7 +109,7 @@ OwnYute/
 ## Conventions
 
 - **Feature-centric grouping:** each screen and its service live together under `lib/features/<feature>/`.
-- **`core/` holds cross-cutting code:** state, persistence, theming, platform bridges, and shared widgets.
+- **`core/` holds cross-cutting code:** state, persistence, theming, platform bridges, and shared row/dialog widgets. There is one track row (`track_row.dart`) and one label (`marquee_text.dart`); feature widgets compose them rather than defining their own. The row owns its swipe offset, so it can rubber-band over-pulls and snap shut when the list scrolls or a drag is cancelled; `ui_helpers.dart` provides `showFeedback` for row confirmations.
 - **Two-file pattern for platform code:** every Android `MethodChannel` has a Dart wrapper in `core/` (`android_storage.dart`, `android_tools.dart`).
 - **Generated files are committed:** `lib/core/database.g.dart` is checked in so the project builds without running `build_runner` first.
 - **Tests mirror behavior:** test files are named after the behavior under test (`library_search_test.dart`, `edit_dialog_test.dart`).

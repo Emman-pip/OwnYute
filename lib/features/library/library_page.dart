@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/app_controller.dart';
 import '../../core/models.dart';
+import '../../core/track_row.dart';
 import '../../core/ui_helpers.dart';
 import 'folder_page.dart';
 import 'library_actions.dart';
@@ -19,8 +20,7 @@ class _LibraryPageState extends State<LibraryPage> {
   String query = '';
   final searchController = TextEditingController();
   final allSongsController = ExpansibleController();
-  final selectedPaths = <String>{};
-  bool selecting = false;
+  final selection = TrackSelection();
 
   @override
   void dispose() {
@@ -28,26 +28,23 @@ class _LibraryPageState extends State<LibraryPage> {
     super.dispose();
   }
 
+  List<LibraryTrack> _selectedTracks() => [
+    for (final track in app.library)
+      if (selection.contains(track.path)) track,
+  ];
+
   Future<void> _assignSelected(BuildContext context) async {
-    final selected = app.library
-        .where((track) => selectedPaths.contains(track.path))
-        .toList();
+    final selected = _selectedTracks();
     if (selected.isEmpty) return;
     final playlist = await choosePlaylist(context, app);
     if (playlist == null) return;
     try {
       await app.assignManyToPlaylist(selected, playlist);
       if (!context.mounted) return;
-      setState(() {
-        selecting = false;
-        selectedPaths.clear();
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Added ${selected.length} ${selected.length == 1 ? 'song' : 'songs'} to ${playlist.title}.',
-          ),
-        ),
+      setState(selection.clear);
+      showFeedback(
+        context,
+        'Added ${selected.length} ${selected.length == 1 ? 'song' : 'songs'} to ${playlist.title}.',
       );
     } catch (failure) {
       if (context.mounted) {
@@ -57,11 +54,11 @@ class _LibraryPageState extends State<LibraryPage> {
     }
   }
 
-  void _toggleSelection(LibraryTrack track) {
-    setState(() {
-      selecting = true;
-      if (!selectedPaths.add(track.path)) selectedPaths.remove(track.path);
-    });
+  Future<void> _deleteSelected(BuildContext context) async {
+    final selected = _selectedTracks();
+    if (selected.isEmpty) return;
+    await deleteSelectedSongs(context, app, selected);
+    if (context.mounted) setState(selection.clear);
   }
 
   @override
@@ -81,14 +78,9 @@ class _LibraryPageState extends State<LibraryPage> {
               )
               .toList()
         : app.library;
-    selectedPaths.retainAll(app.library.map((track) => track.path).toSet());
-    final physical = <String, List<LibraryTrack>>{};
-    for (final track in app.library) {
-      final folder = track.folder.isNotEmpty
-          ? track.folder
-          : track.path.substring(0, track.path.lastIndexOf('/'));
-      (physical[folder] ??= []).add(track);
-    }
+    final selectedList = searching ? visible : app.library;
+    selection.sync(selectedList.map((track) => track.path));
+    final physical = app.storageFolderGroups;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -117,7 +109,7 @@ class _LibraryPageState extends State<LibraryPage> {
           if (visible.isEmpty)
             const ListTile(title: Text('No songs match your search.')),
           for (final track in visible)
-            LibraryTrackTile(app: app, track: track, group: visible),
+            LibraryTrackRow(app: app, track: track, group: visible),
         ] else ...[
           if (app.library.isEmpty)
             const ListTile(
@@ -135,55 +127,29 @@ class _LibraryPageState extends State<LibraryPage> {
                     ),
                   ),
                   TextButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        selecting = !selecting;
-                        if (!selecting) selectedPaths.clear();
-                      });
-                      if (selecting) allSongsController.expand();
-                    },
-                    icon: Icon(selecting ? Icons.close : Icons.checklist),
-                    label: Text(selecting ? 'Cancel' : 'Select'),
+                    onPressed: () => setState(() {
+                      if (selection.active) {
+                        selection.clear();
+                      } else {
+                        selection.start();
+                        allSongsController.expand();
+                      }
+                    }),
+                    icon: Icon(
+                      selection.active ? Icons.close : Icons.checklist,
+                    ),
+                    label: Text(selection.active ? 'Cancel' : 'Select'),
                   ),
                 ],
               ),
             ),
-            if (selecting)
-              Card(
-                color: Theme.of(context).colorScheme.secondaryContainer,
-                child: ListTile(
-                  title: Text('${selectedPaths.length} selected'),
-                  subtitle: TextButton(
-                    style: TextButton.styleFrom(
-                      alignment: Alignment.centerLeft,
-                      padding: EdgeInsets.zero,
-                    ),
-                    onPressed: () => setState(() {
-                      final visiblePaths = app.library
-                          .map((track) => track.path)
-                          .toSet();
-                      if (visiblePaths.every(selectedPaths.contains)) {
-                        selectedPaths.removeAll(visiblePaths);
-                      } else {
-                        selectedPaths.addAll(visiblePaths);
-                      }
-                    }),
-                    child: Text(
-                      app.library.every(
-                            (track) => selectedPaths.contains(track.path),
-                          )
-                          ? 'Clear all songs'
-                          : 'Select all songs',
-                    ),
-                  ),
-                  trailing: IconButton.filled(
-                    tooltip: 'Add selected songs to playlist',
-                    onPressed: selectedPaths.isEmpty
-                        ? null
-                        : () => _assignSelected(context),
-                    icon: const Icon(Icons.playlist_add),
-                  ),
-                ),
+            if (selection.active)
+              SelectionBar(
+                count: selection.count,
+                deleting: app.deletingTotal > 0,
+                progress: app.deleteProgress,
+                onAddToPlaylist: () => _assignSelected(context),
+                onDelete: () => _deleteSelected(context),
               ),
             Card(
               child: ExpansionTile(
@@ -193,14 +159,16 @@ class _LibraryPageState extends State<LibraryPage> {
                 title: Text('${app.library.length} songs'),
                 children: [
                   for (final track in app.library)
-                    LibraryTrackTile(
+                    LibraryTrackRow(
                       app: app,
                       track: track,
                       group: app.library,
-                      allowSelection: true,
-                      selected: selectedPaths.contains(track.path),
-                      selecting: selecting,
-                      onToggleSelection: () => _toggleSelection(track),
+                      selectionMode: selection.active,
+                      selected: selection.contains(track.path),
+                      onSelect: () =>
+                          setState(() => selection.toggle(track.path)),
+                      onLongPress: () =>
+                          setState(() => selection.toggle(track.path)),
                     ),
                 ],
               ),
@@ -238,6 +206,27 @@ class _LibraryPageState extends State<LibraryPage> {
                   entry.value.first.folderName.isNotEmpty
                       ? entry.value.first.folderName
                       : entry.key,
+                ),
+                trailing: PopupMenuButton<String>(
+                  tooltip: 'Storage folder actions',
+                  icon: const Icon(Icons.more_vert),
+                  onSelected: (action) {
+                    if (action == 'artwork') {
+                      refreshFolderArtwork(context, app, entry.key);
+                    } else {
+                      deleteStorageFolder(context, app, entry.key);
+                    }
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(
+                      value: 'artwork',
+                      child: Text('Refresh artwork for folder'),
+                    ),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Text('Delete folder'),
+                    ),
+                  ],
                 ),
               ),
           ],

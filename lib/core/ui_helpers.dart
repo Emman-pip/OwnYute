@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'app_controller.dart';
 import 'artwork_image.dart';
 import 'models.dart';
+import 'track_row.dart';
 
 class SectionTitle extends StatelessWidget {
   const SectionTitle(this.title, {super.key});
@@ -14,56 +15,15 @@ class SectionTitle extends StatelessWidget {
   );
 }
 
-class TrackTile extends StatelessWidget {
-  const TrackTile({
-    super.key,
-    required this.track,
-    required this.onTap,
-    this.trailing,
-    this.onAddToPlaybackQueue,
-    this.fullTitle = false,
-  });
-  final Track track;
-  final VoidCallback onTap;
-  final Widget? trailing;
-  final VoidCallback? onAddToPlaybackQueue;
-  final bool fullTitle;
-  @override
-  Widget build(BuildContext context) => ListTile(
-    leading: ClipRRect(
-      borderRadius: BorderRadius.circular(4),
-      child: ArtworkImage(
-        source: track.artwork,
-        width: 48,
-        height: 48,
-        fallback: const SizedBox.square(
-          dimension: 48,
-          child: Icon(Icons.music_note),
-        ),
-      ),
-    ),
-    title: Text(
-      track.title,
-      maxLines: fullTitle ? null : 1,
-      overflow: fullTitle ? TextOverflow.visible : TextOverflow.ellipsis,
-    ),
-    subtitle: Text(track.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
-    trailing: onAddToPlaybackQueue == null
-        ? trailing
-        : Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                tooltip: 'Add to playback queue',
-                icon: const Icon(Icons.queue_music),
-                onPressed: onAddToPlaybackQueue,
-              ),
-              ?trailing,
-            ],
-          ),
-    onTap: onTap,
-  );
-}
+/// Confirms a row command. The current message is replaced rather than queued
+/// behind it, so tapping an action on several rows does not bury the screen in
+/// SnackBars.
+void showFeedback(BuildContext context, String message) =>
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
+      );
 
 Future<void> showTrackDialog(
   BuildContext context,
@@ -85,6 +45,9 @@ Future<void> showTrackDialog(
         TextButton.icon(
           onPressed: () {
             app.player.addToQueue(track);
+            // Captured before the pop: the dialog's own context is gone by the
+            // time the confirmation needs a ScaffoldMessenger.
+            showFeedback(context, '${track.title} added to playback queue.');
             Navigator.pop(context);
           },
           icon: const Icon(Icons.queue_music),
@@ -103,6 +66,9 @@ Future<void> showTrackDialog(
   );
 }
 
+/// The track picker used for pasted and searched playlists. Rows are ordinary
+/// track rows in selection mode, so a tap *and* a long press toggle, which a
+/// long-press-only picker would not allow.
 Future<void> showPlaylistDialog(
   BuildContext context,
   AppController app,
@@ -127,64 +93,73 @@ Future<void> showPlaylistDialog(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Choose tracks (${selected.length}/${tracks.length})',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                TextButton(
-                  onPressed: () => setDialogState(() {
-                    if (selected.length == tracks.length) {
-                      selected.clear();
-                    } else {
-                      selected.addAll(tracks.map((t) => t.id));
-                    }
-                  }),
-                  child: Text(
-                    selected.length == tracks.length
-                        ? 'Clear all'
-                        : 'Select all',
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Choose tracks (${selected.length}/${tracks.length})',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: () => setDialogState(() {
+                        if (selected.length == tracks.length) {
+                          selected.clear();
+                        } else {
+                          selected.addAll(tracks.map((t) => t.id));
+                        }
+                      }),
+                      child: Text(
+                        selected.length == tracks.length
+                            ? 'Clear all'
+                            : 'Select all',
+                      ),
+                    ),
+                  ],
                 ),
                 Expanded(
                   child: ListView.builder(
                     itemCount: tracks.length,
                     itemBuilder: (context, index) {
                       final track = tracks[index];
-                      return CheckboxListTile(
-                        value: selected.contains(track.id),
-                        title: Text(
-                          track.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text(
-                          track.artist,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        secondary: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              tooltip: 'Preview',
-                              icon: const Icon(Icons.play_arrow),
-                              onPressed: () =>
-                                  app.player.playTracks(tracks, index),
-                            ),
-                            IconButton(
-                              tooltip: 'Add to playback queue',
-                              icon: const Icon(Icons.queue_music),
-                              onPressed: () => app.player.addToQueue(track),
-                            ),
-                          ],
-                        ),
-                        onChanged: (value) => setDialogState(() {
-                          if (value == true) {
-                            selected.add(track.id);
-                          } else {
-                            selected.remove(track.id);
-                          }
-                        }),
+                      void toggle() => setDialogState(() {
+                        if (selected.contains(track.id)) {
+                          selected.remove(track.id);
+                        } else {
+                          selected.add(track.id);
+                        }
+                      });
+                      return TrackTile(
+                        title: track.title,
+                        subtitle: track.artist,
+                        artwork: track.artwork,
+                        dense: true,
+                        selectionMode: true,
+                        selected: selected.contains(track.id),
+                        onTap: toggle,
+                        onLongPress: toggle,
+                        actions: [
+                          TrackAction(
+                            tooltip: 'Preview',
+                            icon: Icons.play_arrow,
+                            onPressed: () =>
+                                app.player.playTracks(tracks, index),
+                          ),
+                          TrackAction(
+                            tooltip: 'Add to playback queue',
+                            icon: Icons.queue_music,
+                            onPressed: () {
+                              app.player.addToQueue(track);
+                              showFeedback(
+                                context,
+                                '${track.title} added to playback queue.',
+                              );
+                            },
+                          ),
+                        ],
                       );
                     },
                   ),
@@ -198,6 +173,22 @@ Future<void> showPlaylistDialog(
                       TextButton(
                         onPressed: () => Navigator.pop(context),
                         child: const Text('Cancel'),
+                      ),
+                      // Plays just the chosen tracks, in playlist order, so a
+                      // batch can be auditioned before anything is downloaded.
+                      OutlinedButton.icon(
+                        onPressed: selected.isEmpty
+                            ? null
+                            : () {
+                                final chosen = [
+                                  for (final track in tracks)
+                                    if (selected.contains(track.id)) track,
+                                ];
+                                Navigator.pop(context);
+                                app.player.playTracks(chosen, 0);
+                              },
+                        icon: const Icon(Icons.play_arrow),
+                        label: const Text('Preview selected'),
                       ),
                       FilledButton(
                         onPressed: selected.isEmpty

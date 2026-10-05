@@ -41,7 +41,17 @@ OwnYute follows a layered architecture: a thin Flutter UI, a central application
 
 ### 1. Presentation
 
-`lib/features/search`, `queue`, `library`, `settings`, and `player` contain pages and widgets. They hold only ephemeral UI state (search text, dialog controllers, selection sets) and delegate all durable actions to `AppController`. Shared widgets such as `TrackTile` and dialogs live in `lib/core/ui_helpers.dart`.
+`lib/features/search`, `queue`, `library`, `settings`, and `player` contain pages and widgets. They hold only ephemeral UI state (search text, dialog controllers, selection sets) and delegate all durable actions to `AppController`.
+
+Shared row UI lives in `lib/core/`:
+
+| File | What it owns |
+| --- | --- |
+| `track_row.dart` | `TrackTile`, the single row shape used by every track list, plus `TrackAction`, `TrackSelection` (per-list selection state) and `SelectionBar`. |
+| `marquee_text.dart` | `MarqueeText`, the single-line label that scrolls when a title is truncated, and the painter its tests read. |
+| `ui_helpers.dart` | `SectionTitle` and the shared dialogs (track details, playlist picker, text entry, metadata edit). |
+
+`TrackTile` is deliberately the only row widget: `[artwork or checkbox][title / subtitle][pinned][overflow]`. The overflow region is a swipe-revealed action strip on touch and a `⋮` menu on pointer platforms, so no command depends on a gesture being discovered. The row slides over the strip and both crop their own trailing/leading edge, which keeps the actions invisible and untappable until the row is actually swiped. `library_widgets.dart` supplies the saved-song action list so the library, folder pages and library search matches stay identical.
 
 ### 2. Application controller
 
@@ -50,7 +60,7 @@ OwnYute follows a layered architecture: a thin Flutter UI, a central application
 - Load and persist settings, queue, library, and history on startup.
 - Drive search, playlist parsing, preview resolution, and metadata edits.
 - Own the sequential download loop, including duplicate handling and batch bookkeeping.
-- Manage playlist folders, physical folder scans, and file moves/deletes.
+- Manage playlist folders, physical folder scans, and file moves/deletes, including the bulk (`deleteSongs`) and folder (`deleteStorageFolder`) deletes that aggregate per-song failures into one error.
 - Expose helpers for the artwork picker and theme selection.
 
 ### 3. Feature services
@@ -61,7 +71,7 @@ OwnYute follows a layered architecture: a thin Flutter UI, a central application
 | `DownloadService` | Downloads, transcodes to MP3, embeds cover art, verifies output, edits metadata. |
 | `LibraryService` | Reads local audio tags with `ffprobe` (Linux) or `MediaMetadataRetriever` (Android). |
 | `YtDlpManager` | Fetches, verifies, installs, and falls back between nightly `yt-dlp` builds. |
-| `PlayerController` | Controls local/streamed playback, queue navigation, shuffle/repeat. |
+| `PlayerController` | Controls local/streamed playback, queue navigation, shuffle/repeat. The queue is current-first: `current` is always `queue[0]` and finished tracks move to a capped, in-memory `history`, so **Previous** can still reach them. `_normalizeQueue()` re-establishes that invariant after every queue mutation and after `restore()`, where the persisted index would otherwise restore the old ordering. |
 
 ### 4. Platform bridges
 

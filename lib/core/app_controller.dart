@@ -82,8 +82,33 @@ class AppController extends ChangeNotifier {
   bool artworkLookupRunning = false;
   int artworkLookupUpdated = 0;
   int artworkLookupFailed = 0;
+  bool _artworkBusy = false;
+  int deletingTotal = 0;
+  int deletingRemaining = 0;
   int _batchSequence = 0;
   Widget? folderOverlay;
+
+  /// Progress of a running bulk delete, for the selection bar's progress line.
+  double? get deleteProgress => deletingTotal == 0
+      ? null
+      : (deletingTotal - deletingRemaining) / deletingTotal;
+
+  /// The physical folder a library entry belongs to, falling back to its
+  /// parent directory when the entry predates folder bookkeeping.
+  static String folderOf(LibraryTrack track) {
+    if (track.folder.isNotEmpty) return track.folder;
+    final slash = track.path.lastIndexOf('/');
+    return slash <= 0 ? '' : track.path.substring(0, slash);
+  }
+
+  /// Library entries grouped by physical folder, in library order.
+  Map<String, List<LibraryTrack>> get storageFolderGroups {
+    final groups = <String, List<LibraryTrack>>{};
+    for (final track in library) {
+      (groups[folderOf(track)] ??= []).add(track);
+    }
+    return groups;
+  }
 
   void openFolderOverlay(Widget page) {
     folderOverlay = page;
@@ -215,7 +240,8 @@ class AppController extends ChangeNotifier {
   Future<void> saveOffline(Track track) => add(track);
 
   Future<void> lookupMissingArtwork() async {
-    if (artworkLookupRunning) return;
+    if (_artworkBusy) return;
+    _artworkBusy = true;
     artworkLookupRunning = true;
     artworkLookupUpdated = 0;
     artworkLookupFailed = 0;
@@ -247,6 +273,57 @@ class AppController extends ChangeNotifier {
         notifyListeners();
       }
     } finally {
+      _artworkBusy = false;
+      artworkLookupRunning = false;
+      notifyListeners();
+    }
+  }
+
+  /// Looks up cover art for one saved song, the row action behind
+  /// **Refresh artwork**. Best effort like every other artwork path: a miss or
+  /// a failure only moves a counter, so it can never block the UI.
+  Future<void> lookupArtwork(
+    LibraryTrack track, {
+    bool replaceExisting = true,
+  }) async {
+    if (!replaceExisting && track.artwork.trim().isNotEmpty) return;
+    try {
+      final match = await youtube.findArtwork(
+        title: track.title,
+        artist: track.artist,
+        sourceTrackId: track.sourceTrackId,
+      );
+      if (match == null || match.artwork.trim().isEmpty) return;
+      final current = library.where((entry) => entry.path == track.path);
+      if (current.isEmpty) return;
+      await editLibrary(
+        current.first,
+        current.first.copyWith(artwork: match.artwork),
+      );
+      artworkLookupUpdated++;
+    } catch (_) {
+      artworkLookupFailed++;
+    }
+    notifyListeners();
+  }
+
+  /// Runs [lookupArtwork] over one folder, sequentially and with the same
+  /// conservative match rules as the library-wide lookup.
+  Future<void> lookupFolderArtwork(String folderPath) async {
+    if (_artworkBusy) return;
+    final members = library
+        .where((track) => folderOf(track) == folderPath)
+        .toList();
+    if (members.isEmpty) return;
+    _artworkBusy = true;
+    artworkLookupRunning = true;
+    notifyListeners();
+    try {
+      for (final track in members) {
+        await lookupArtwork(track);
+      }
+    } finally {
+      _artworkBusy = false;
       artworkLookupRunning = false;
       notifyListeners();
     }
@@ -1044,6 +1121,63 @@ class AppController extends ChangeNotifier {
       await database.removeQueue(item.track.id);
       queue = queue.where((entry) => entry.track.id != item.track.id).toList();
     }
+    notifyListeners();
+  }
+
+  /// Deletes several saved songs one at a time, reporting how far along it is
+  /// so a list can show a progress line. Per-song failures are collected and
+  /// raised as a single error, like [deletePlaylist].
+  Future<void> deleteSongs(List<LibraryTrack> tracks) async {
+    if (tracks.isEmpty) return;
+    deletingTotal = tracks.length;
+    deletingRemaining = tracks.length;
+    notifyListeners();
+    final failures = <String>[];
+    try {
+      for (final track in List<LibraryTrack>.from(tracks)) {
+        try {
+          await deleteSong(track);
+        } catch (failure) {
+          failures.add('${track.title}: $failure');
+        }
+        deletingRemaining--;
+        notifyListeners();
+      }
+    } finally {
+      deletingTotal = 0;
+      deletingRemaining = 0;
+      notifyListeners();
+    }
+    if (failures.isNotEmpty) {
+      throw StateError(
+        'Could not delete ${failures.length} songs: ${failures.join('; ')}',
+      );
+    }
+  }
+
+  /// Removes every library entry in one physical folder. With
+  /// [deleteFiles] the audio itself goes too, routed through [deleteSong] so
+  /// Android `content://` paths and playback cleanup behave the same as a
+  /// single-song delete. An imported folder also stops being scanned, so a
+  /// later refresh cannot bring the removed songs back.
+  Future<void> deleteStorageFolder(
+    String folderPath, {
+    required bool deleteFiles,
+  }) async {
+    final members = library
+        .where((track) => folderOf(track) == folderPath)
+        .toList();
+    if (importedFolders.contains(folderPath)) {
+      await stopScanningFolder(folderPath);
+    }
+    if (deleteFiles) {
+      await deleteSongs(members);
+      return;
+    }
+    for (final track in members) {
+      await database.removeLibrary(track.path);
+    }
+    library = library.where((track) => folderOf(track) != folderPath).toList();
     notifyListeners();
   }
 
