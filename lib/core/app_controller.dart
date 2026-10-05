@@ -44,6 +44,20 @@ class AppController extends ChangeNotifier {
   late final PlayerController player;
   List<Track> songs = [];
   List<Track> playlists = [];
+  String searchTerm = '';
+  bool songsLoading = false;
+  bool playlistsLoading = false;
+  bool songsExhausted = false;
+  bool playlistsExhausted = false;
+  List<Track> _songCache = [];
+  List<Track> _playlistCache = [];
+  bool _songsFullFetched = false;
+  bool _playlistsFullFetched = false;
+  int _searchGeneration = 0;
+  static const int songBatch = 5;
+  static const int playlistBatch = 5;
+  @visibleForTesting
+  static Duration revealDelay = const Duration(milliseconds: 250);
   List<Track> picker = [];
   PlaylistRef? pickerPlaylist;
   List<Track> recentPlays = [];
@@ -225,18 +239,154 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> search(String query) async {
-    busy = true;
-    error = null;
+    final term = query.trim();
+    final generation = ++_searchGeneration;
+    songs = [];
+    playlists = [];
+    searchTerm = term;
+    songsLoading = term.isNotEmpty;
+    playlistsLoading = term.isNotEmpty;
+    songsExhausted = term.isEmpty;
+    playlistsExhausted = term.isEmpty;
+    _songCache = [];
+    _playlistCache = [];
+    _songsFullFetched = false;
+    _playlistsFullFetched = false;
     notifyListeners();
+    if (term.isEmpty) return;
+    await Future.wait([
+      _loadSongs(generation, term, full: false),
+      _loadPlaylists(generation, term, full: false),
+    ]);
+  }
+
+  Future<void> loadMoreSongs() async {
+    if (songsLoading || songsExhausted || searchTerm.isEmpty) return;
+    final generation = _searchGeneration;
+    songsLoading = true;
+    notifyListeners();
+    if (songs.length < _songCache.length) {
+      await _revealSongs(generation);
+      return;
+    }
+    if (!_songsFullFetched) {
+      await _loadSongs(generation, searchTerm, full: true);
+      if (generation != _searchGeneration) return;
+      await _revealSongs(generation);
+      return;
+    }
+    songsExhausted = true;
+    songsLoading = false;
+    notifyListeners();
+  }
+
+  Future<void> loadMorePlaylists() async {
+    if (playlistsLoading || playlistsExhausted || searchTerm.isEmpty) return;
+    final generation = _searchGeneration;
+    playlistsLoading = true;
+    notifyListeners();
+    if (playlists.length < _playlistCache.length) {
+      await _revealPlaylists(generation);
+      return;
+    }
+    if (!_playlistsFullFetched) {
+      await _loadPlaylists(generation, searchTerm, full: true);
+      if (generation != _searchGeneration) return;
+      await _revealPlaylists(generation);
+      return;
+    }
+    playlistsExhausted = true;
+    playlistsLoading = false;
+    notifyListeners();
+  }
+
+  Future<void> _loadSongs(int generation, String term, {required bool full}) async {
     try {
-      final result = await youtube.search(query);
-      songs = result.songs;
-      playlists = result.playlists;
+      final result = await youtube.search(term, songs: full ? 0 : songBatch);
+      if (generation != _searchGeneration) return;
+      _songCache = result.songs;
+      _songsFullFetched = full;
+      songs = _songCache.take(songBatch).toList();
+      songsExhausted = !full && result.songsTotal < songBatch;
     } catch (failure) {
+      if (generation != _searchGeneration) return;
       error = failure.toString();
     }
-    busy = false;
+    if (generation != _searchGeneration) return;
+    songsLoading = false;
     notifyListeners();
+  }
+
+  Future<void> _loadPlaylists(int generation, String term, {required bool full}) async {
+    try {
+      final result = await youtube.search(
+        term,
+        playlists: full ? 0 : playlistBatch,
+      );
+      if (generation != _searchGeneration) return;
+      _playlistCache = result.playlists;
+      _playlistsFullFetched = full;
+      playlists = _playlistCache.take(playlistBatch).toList();
+      playlistsExhausted = !full && result.playlistsTotal < playlistBatch;
+    } catch (failure) {
+      if (generation != _searchGeneration) return;
+      error = failure.toString();
+    }
+    if (generation != _searchGeneration) return;
+    playlistsLoading = false;
+    notifyListeners();
+  }
+
+  Future<void> _revealSongs(int generation) async {
+    while (generation == _searchGeneration && songs.length < _songCache.length) {
+      final next = _songCache.skip(songs.length).take(songBatch).toList();
+      songs = _appendUnique(songs, next);
+      notifyListeners();
+      if (songs.length < _songCache.length) {
+        await Future<void>.delayed(revealDelay);
+      }
+    }
+    if (generation != _searchGeneration) return;
+    if (songs.length >= _songCache.length && _songsFullFetched) {
+      songsExhausted = true;
+    }
+    songsLoading = false;
+    notifyListeners();
+  }
+
+  Future<void> _revealPlaylists(int generation) async {
+    while (
+      generation == _searchGeneration &&
+      playlists.length < _playlistCache.length
+    ) {
+      final next = _playlistCache
+          .skip(playlists.length)
+          .take(playlistBatch)
+          .toList();
+      playlists = _appendUnique(playlists, next);
+      notifyListeners();
+      if (playlists.length < _playlistCache.length) {
+        await Future<void>.delayed(revealDelay);
+      }
+    }
+    if (generation != _searchGeneration) return;
+    if (playlists.length >= _playlistCache.length && _playlistsFullFetched) {
+      playlistsExhausted = true;
+    }
+    playlistsLoading = false;
+    notifyListeners();
+  }
+
+  static List<Track> _appendUnique(
+    List<Track> current,
+    Iterable<Track> additions,
+  ) {
+    final seen = current.map((track) => track.id).toSet();
+    final merged = [...current];
+    for (final track in additions) {
+      if (seen.add(track.id)) merged.add(track);
+    }
+    return merged;
   }
 
   Future<Track?> openUrl(String value) async {

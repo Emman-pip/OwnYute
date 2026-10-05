@@ -10,9 +10,38 @@ import 'package:own_yute/features/downloads/download_service.dart';
 import 'package:own_yute/features/search/youtube_service.dart';
 
 class FakeYoutube extends YoutubeService {
+  int fullSearches = 0;
   @override
-  Future<SearchResults> search(String query) async =>
-      SearchResults(songs: [song], playlists: []);
+  Future<SearchResults> search(
+    String query, {
+    int songs = 5,
+    int playlists = 5,
+  }) async {
+    if (songs == 0 || playlists == 0) fullSearches++;
+    final allSongs = List.generate(
+      12,
+      (index) => Track(
+        id: 'song-$index',
+        url: 'https://www.youtube.com/watch?v=song-$index',
+        title: 'Song $index',
+      ),
+    );
+    final allPlaylists = List.generate(
+      20,
+      (index) => Track(
+        id: 'playlist-$index',
+        url: 'https://www.youtube.com/playlist?list=playlist-$index',
+        title: 'Playlist $index',
+      ),
+    );
+    return SearchResults(
+      songs: songs == 0 ? allSongs : allSongs.take(songs).toList(),
+      playlists:
+          playlists == 0 ? allPlaylists : allPlaylists.take(playlists).toList(),
+      songsTotal: allSongs.length,
+      playlistsTotal: allPlaylists.length,
+    );
+  }
   @override
   Future<(Track?, List<Track>)> openUrl(String value) async {
     if (!isYoutubeUrl(value)) throw const YoutubeFailure('Invalid URL');
@@ -72,7 +101,8 @@ void main() {
       final app = AppController(database: database, youtube: FakeYoutube());
       await app.initialize();
       await app.search('one');
-      expect(app.songs.single.title, 'One');
+      expect(app.songs, isNotEmpty);
+      expect(app.playlists, isNotEmpty);
       expect((await app.openUrl(song.url))?.id, 'one');
       expect(
         await app.openUrl('https://www.youtube.com/playlist?list=abc'),
@@ -95,6 +125,41 @@ void main() {
       await database.close();
     },
   );
+
+  test('staged search loads a small first batch and pages on demand', () async {
+    final database = AppDatabase.forTesting(NativeDatabase.memory());
+    final youtube = FakeYoutube();
+    final app = AppController(database: database, youtube: youtube);
+    AppController.revealDelay = Duration.zero;
+    addTearDown(() => AppController.revealDelay = const Duration(milliseconds: 250));
+    await app.initialize();
+    await app.search('music');
+    expect(app.songs, hasLength(5));
+    expect(app.playlists, hasLength(5));
+    expect(app.songsExhausted, isFalse);
+    expect(app.playlistsExhausted, isFalse);
+    expect(youtube.fullSearches, 0);
+
+    await app.loadMoreSongs();
+    expect(youtube.fullSearches, 1);
+    expect(app.songs, hasLength(12));
+    expect(app.songsExhausted, isTrue);
+    await app.loadMoreSongs();
+    expect(app.songs, hasLength(12));
+    expect(youtube.fullSearches, 1);
+
+    await app.loadMorePlaylists();
+    expect(app.playlists, hasLength(20));
+    expect(app.playlistsExhausted, isTrue);
+
+    await app.search('other');
+    expect(app.songs, hasLength(5));
+    expect(app.playlists, hasLength(5));
+    expect(app.songsExhausted, isFalse);
+    expect(youtube.fullSearches, 1);
+    app.player.dispose();
+    await database.close();
+  });
 
   test('invalid URL reports a useful error', () async {
     final database = AppDatabase.forTesting(NativeDatabase.memory());

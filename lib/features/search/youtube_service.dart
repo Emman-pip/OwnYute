@@ -13,9 +13,16 @@ class YoutubeFailure implements Exception {
 }
 
 class SearchResults {
-  const SearchResults({required this.songs, required this.playlists});
+  const SearchResults({
+    required this.songs,
+    required this.playlists,
+    this.songsTotal = 0,
+    this.playlistsTotal = 0,
+  });
   final List<Track> songs;
   final List<Track> playlists;
+  final int songsTotal;
+  final int playlistsTotal;
 }
 
 typedef CommandRunner = Future<ProcessResult> Function(
@@ -24,6 +31,8 @@ typedef CommandRunner = Future<ProcessResult> Function(
 );
 
 class YoutubeService {
+  static const int fullSongWindow = 50;
+
   YoutubeService({CommandRunner? run, YtDlpManager? tools})
     : _run = run ?? _platformRun,
       _tools = tools ?? (run == null ? YtDlpManager.shared : null);
@@ -86,26 +95,45 @@ class YoutubeService {
         host == 'youtu.be';
   }
 
-  Future<SearchResults> search(String query) async {
+  /// Fetches one page of results. [songs] and [playlists] are the batch
+  /// sizes; pass 0 for a "full" fetch (large song window, unlimited
+  /// playlists).
+  Future<SearchResults> search(
+    String query, {
+    int songs = 5,
+    int playlists = 5,
+  }) async {
     final term = query.trim();
-    if (term.isEmpty) return const SearchResults(songs: [], playlists: []);
+    if (term.isEmpty) {
+      return const SearchResults(songs: [], playlists: []);
+    }
     final results = await Future.wait([
-      _json(['--flat-playlist', 'ytsearch12:$term']),
       _json([
         '--flat-playlist',
+        'ytsearch${songs == 0 ? fullSongWindow : songs}:$term',
+      ]),
+      _json([
+        '--flat-playlist',
+        if (playlists > 0) '--playlist-end',
+        if (playlists > 0) '$playlists',
         Uri.https('www.youtube.com', '/results', {
           'search_query': term,
           'sp': 'EgIQAw==',
         }).toString(),
       ]).onError((_, _) => <String, dynamic>{}),
     ]);
-    final songs = _entries(results[0])
+    final allSongs = _entries(results[0])
         .where((track) => track.id.isNotEmpty)
         .toList();
-    final playlists = _entries(results[1])
+    final playlistResults = _entries(results[1])
         .where((track) => track.url.contains('list='))
         .toList();
-    return SearchResults(songs: songs, playlists: playlists);
+    return SearchResults(
+      songs: allSongs,
+      playlists: playlistResults,
+      songsTotal: allSongs.length,
+      playlistsTotal: playlistResults.length,
+    );
   }
 
   Future<(Track?, List<Track>)> openUrl(String value) async {

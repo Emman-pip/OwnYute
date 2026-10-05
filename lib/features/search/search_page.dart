@@ -182,7 +182,7 @@ class _SearchPageState extends State<SearchPage> {
           for (final track in localMatches)
             LibraryTrackTile(app: app, track: track, group: localMatches),
           const SectionTitle('Songs'),
-          if (app.songs.isEmpty)
+          if (app.songs.isEmpty && !app.songsLoading)
             const ListTile(title: Text('No YouTube songs found.')),
           ...app.songs.map(
             (track) => TrackTile(
@@ -190,6 +190,23 @@ class _SearchPageState extends State<SearchPage> {
               onTap: () => showTrackDialog(context, app, track, widget.onQueue),
             ),
           ),
+          if (!app.songsExhausted)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: app.songsLoading
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : TextButton.icon(
+                      icon: const Icon(Icons.expand_more),
+                      label: const Text('More results'),
+                      onPressed: app.loadMoreSongs,
+                    ),
+            ),
           const SectionTitle('Playlists'),
           ...app.playlists.map(
             (track) => TrackTile(
@@ -207,6 +224,23 @@ class _SearchPageState extends State<SearchPage> {
               },
             ),
           ),
+          if (!app.playlistsExhausted)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: app.playlistsLoading
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : TextButton.icon(
+                      icon: const Icon(Icons.expand_more),
+                      label: const Text('More results'),
+                      onPressed: app.loadMorePlaylists,
+                    ),
+            ),
         ] else ...[
           if (app.recentPlays.isNotEmpty) ...[
             const SectionTitle('Recently played'),

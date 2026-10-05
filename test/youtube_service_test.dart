@@ -113,6 +113,47 @@ void main() {
     );
   });
 
+  test('search fetches a small batch first and a full window on demand', () async {
+    final requested = <String>[];
+    final playlistArgs = <List<String>>[];
+    final youtube = YoutubeService(
+      run: (_, arguments) async {
+        final input = arguments.last;
+        if (input.startsWith('ytsearch')) {
+          requested.add(input);
+          final count = int.parse(
+            input.substring('ytsearch'.length, input.indexOf(':')),
+          );
+          return ProcessResult(
+            0,
+            0,
+            jsonEncode({
+              'entries': List.generate(
+                count,
+                (index) => {'id': 'song-$index', 'title': 'Song $index'},
+              ),
+            }),
+            '',
+          );
+        }
+        playlistArgs.add(arguments);
+        return ProcessResult(0, 0, jsonEncode({'entries': []}), '');
+      },
+    );
+    final first = await youtube.search('music');
+    expect(requested.single, 'ytsearch5:music');
+    expect(playlistArgs.single, contains('--playlist-end'));
+    expect(playlistArgs.single, contains('5'));
+    expect(first.songs, hasLength(5));
+    expect(first.songsTotal, 5);
+
+    final full = await youtube.search('music', songs: 0, playlists: 0);
+    expect(requested.last, 'ytsearch50:music');
+    expect(playlistArgs.last, isNot(contains('--playlist-end')));
+    expect(full.songs, hasLength(50));
+    expect(full.songsTotal, 50);
+  });
+
   test('search uses the app-managed Linux nightly', () async {
     final directory = await Directory.systemTemp.createTemp(
       'own_yute_tool_choice_',
