@@ -1,0 +1,113 @@
+import 'package:flutter/material.dart';
+
+import 'app_controller.dart';
+
+class AppThemes {
+  static const _standardSeed = Color(0xff6656d8);
+
+  static ThemeData light(AppThemeChoice choice) => switch (choice) {
+    AppThemeChoice.pastelBlue => _pastel(
+      primary: const Color(0xff4d78a8),
+      onPrimary: Colors.white,
+      primaryContainer: const Color(0xffcde4ff),
+      onPrimaryContainer: const Color(0xff193c60),
+      secondary: const Color(0xff627f9e),
+      secondaryContainer: const Color(0xffdcecfb),
+      onSecondaryContainer: const Color(0xff274562),
+      surface: const Color(0xfff7fbff),
+      background: const Color(0xfff0f7ff),
+      containerLow: const Color(0xffeaf3fd),
+      container: const Color(0xffe2effb),
+      containerHigh: const Color(0xffd9e9f8),
+      containerHighest: const Color(0xffcbdff3),
+      onSurface: const Color(0xff1c2d3d),
+      onSurfaceVariant: const Color(0xff475f76),
+      outline: const Color(0xff738ba1),
+    ),
+    AppThemeChoice.pastelPink => _pastel(
+      primary: const Color(0xffaa5279),
+      onPrimary: Colors.white,
+      primaryContainer: const Color(0xffffd4e6),
+      onPrimaryContainer: const Color(0xff642b46),
+      secondary: const Color(0xff9a6980),
+      secondaryContainer: const Color(0xfff8deea),
+      onSecondaryContainer: const Color(0xff5a3549),
+      surface: const Color(0xfffff9fc),
+      background: const Color(0xfffff1f7),
+      containerLow: const Color(0xfffcecf3),
+      container: const Color(0xfff8e3ed),
+      containerHigh: const Color(0xfff4d8e5),
+      containerHighest: const Color(0xffedc9da),
+      onSurface: const Color(0xff392633),
+      onSurfaceVariant: const Color(0xff664d5b),
+      outline: const Color(0xff9f7d8e),
+    ),
+    _ => ThemeData(
+      colorScheme: ColorScheme.fromSeed(seedColor: _standardSeed),
+      useMaterial3: true,
+    ),
+  };
+
+  static ThemeData dark() => ThemeData(
+    colorScheme: ColorScheme.fromSeed(
+      seedColor: _standardSeed,
+      brightness: Brightness.dark,
+    ),
+    useMaterial3: true,
+  );
+
+  static ThemeData _pastel({
+    required Color primary,
+    required Color onPrimary,
+    required Color primaryContainer,
+    required Color onPrimaryContainer,
+    required Color secondary,
+    required Color secondaryContainer,
+    required Color onSecondaryContainer,
+    required Color surface,
+    required Color background,
+    required Color containerLow,
+    required Color container,
+    required Color containerHigh,
+    required Color containerHighest,
+    required Color onSurface,
+    required Color onSurfaceVariant,
+    required Color outline,
+  }) {
+    final colors = ColorScheme.fromSeed(seedColor: primary).copyWith(
+      primary: primary,
+      onPrimary: onPrimary,
+      primaryContainer: primaryContainer,
+      onPrimaryContainer: onPrimaryContainer,
+      secondary: secondary,
+      secondaryContainer: secondaryContainer,
+      onSecondaryContainer: onSecondaryContainer,
+      surface: surface,
+      surfaceContainerLow: containerLow,
+      surfaceContainer: container,
+      surfaceContainerHigh: containerHigh,
+      surfaceContainerHighest: containerHighest,
+      onSurface: onSurface,
+      onSurfaceVariant: onSurfaceVariant,
+      outline: outline,
+    );
+    return ThemeData(
+      colorScheme: colors,
+      scaffoldBackgroundColor: background,
+      appBarTheme: AppBarTheme(
+        backgroundColor: surface,
+        foregroundColor: onSurface,
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: containerLow,
+        indicatorColor: primaryContainer,
+      ),
+      cardTheme: CardThemeData(color: surface),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: surface,
+      ),
+      useMaterial3: true,
+    );
+  }
+}
