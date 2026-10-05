@@ -237,7 +237,7 @@ class PlaybackService : Service() {
         const val ACTION_NEXT = "own_yute.NEXT"
         private const val CHANNEL = "own_yute_playback"
         private const val NOTIFICATION_ID = 14
-        private var events: ((String, Any?) -> Unit)? = null
+        var events: ((String, Any?) -> Unit)? = null
         var instance: PlaybackService? = null
             private set
     }
