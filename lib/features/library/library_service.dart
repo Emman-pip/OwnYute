@@ -7,6 +7,32 @@ import '../../core/models.dart';
 import '../../core/android_storage.dart';
 
 class LibraryService {
+  /// Reads only the length of a saved file. Callers use this to repair library
+  /// entries that were indexed without duration.
+  Future<int> readDuration(String path) async {
+    try {
+      if (Platform.isAndroid) {
+        return (await AndroidStorage.metadata(path)).duration;
+      }
+      final result = await Process.run('ffprobe', [
+        '-v',
+        'error',
+        '-show_entries',
+        'format=duration',
+        '-of',
+        'json',
+        path,
+      ]);
+      if (result.exitCode != 0) return 0;
+      final json = jsonDecode(result.stdout as String) as Map<String, dynamic>;
+      final format = json['format'] as Map<String, dynamic>?;
+      return (double.tryParse(format?['duration']?.toString() ?? '') ?? 0)
+          .round();
+    } catch (_) {
+      return 0;
+    }
+  }
+
   Future<LibraryTrack> readTrack(File file) async {
     if (Platform.isAndroid) return AndroidStorage.metadata(file.path);
     final fallback = LibraryTrack(

@@ -106,7 +106,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ),
                     NavigationRailDestination(
                       icon: Icon(Icons.download),
-                      label: Text('Queue'),
+                      label: Text('Downloads'),
                     ),
                     NavigationRailDestination(
                       icon: Icon(Icons.library_music),
@@ -161,7 +161,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         ),
                       ),
                     ),
-                    MiniPlayer(app: app),
+                    MiniPlayer(
+                      app: app,
+                      onDownloads: () => setState(() {
+                        app.closeFolderPage();
+                        page = 1;
+                      }),
+                    ),
                   ],
                 ),
               ),
@@ -180,7 +186,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ),
                     NavigationDestination(
                       icon: Icon(Icons.download),
-                      label: 'Queue',
+                      label: 'Downloads',
                     ),
                     NavigationDestination(
                       icon: Icon(Icons.library_music),

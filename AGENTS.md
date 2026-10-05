@@ -51,10 +51,17 @@ Also note: creating several `AppDatabase.forTesting(NativeDatabase.memory())` in
 
 - One `AppController` (`lib/core/app_controller.dart`, the largest file in the repo) is the single `ChangeNotifier` source of truth. Riverpod is used **only** to provide that one instance (`appProvider` in `lib/main.dart`) — it is not used for granular state. Widgets rebuild via `ListenableBuilder`.
 - High-frequency state lives in separate notifiers reached through the controller (`app.tools` for `YtDlpManager`, `app.player` for `PlayerController`) to avoid whole-app rebuilds.
-- Services are injectable through the `AppController` constructor (`database`, `youtube`, `downloader`) — this is the seam tests use. Extend it rather than reaching for globals.
-- Persistence is deliberately schema-light: five drift tables holding **JSON blobs** keyed by id/path, `schemaVersion = 2`. `fromJson` supplies defaults so adding a model field stays backward compatible (see `test/model_compatibility_test.dart`). Don't normalize the schema without a reason.
+- Services are injectable through the `AppController` constructor (`database`, `youtube`, `downloader`, `libraryService`) — this is the seam tests use. Extend it rather than reaching for globals.
+- **Two distinct queues, never merge them.** `AppController.queue` is the Drift-backed *download* queue (the `QueuePage` / **Downloads** tab). `PlayerController.queue` is the *playback* queue, persisted to `playback_snapshot.json` in the app documents directory. `playTracks()` replaces the playback queue; `addToQueue()` / `addAllToQueue()` / `removeAt()` / `reorder()` mutate it without disturbing playback of the current track.
+- Playback-queue edits must keep the snapshot current (`_saveSnapshot()`) and must leave a safe current track: removing the playing track stops audio and selects a successor; queueing onto an idle player adopts the first item as a paused `current` so the mini player appears without starting audio.
+- Persistence is deliberately schema-light: five drift tables holding **JSON blobs** keyed by id/path, `schemaVersion = 2`. `fromJson` supplies defaults so adding a model field stays backward compatible (see `test/model_compatibility_test.dart`). Don't normalize the schema without a reason. Settings (theme, player animation, automatic artwork lookup) use the existing key/value table — only regenerate drift code on a real schema change.
 - `AppController.revealDelay` is a `@visibleForTesting` static used to make staged search reveal instant; tests that touch it must restore it in `addTearDown` (see `app_controller_test.dart`).
 - Linux calls `yt-dlp`/`ffmpeg` directly with `dart:io` using **argv arrays**. Android goes through four `MethodChannel`s (`own_yute/tools`, `own_yute/storage`, `own_yute/player`, `own_yute/diagnostics`). Branch on `Platform.isAndroid` / `Platform.isLinux` as the existing code does.
+
+## Two traps that look like bugs but are data gaps
+
+- **`yt-dlp --flat-playlist` returns no duration**, so search results carry `Track.duration == 0`. Downloads therefore recorded a library entry with no length, and the player's scrubber had no value to show. Duration is now read back from the saved file: `LibraryService.readDuration()`, `_resolveSavedDuration()` at download time, `_repairMissingDuration()` during `refreshLibrary()`, and `PlayerController._fillLocalDuration()` via the injectable `probeLocalDuration` (ffprobe by default, never used for remote URLs). When changing how a track is constructed, check whether its duration is real.
+- **Artwork lookup is optional, on by default, sequential, and best-effort.** `YoutubeService.findArtwork()` matches conservatively on normalized title/artist; `AppController.lookupMissingArtwork()` runs it in the background and embeds matches via `editLibrary()`. Failures increment counters and are swallowed so they can never block playback or downloads.
 
 ## Platform gotchas that look removable but are not
 

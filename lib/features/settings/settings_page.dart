@@ -71,6 +71,44 @@ class SettingsPage extends StatelessWidget {
             onChanged: app.setPlayerAnimationEnabled,
           ),
           const SizedBox(height: 24),
+          Text('Artwork', style: Theme.of(context).textTheme.titleLarge),
+          SwitchListTile(
+            secondary: const Icon(Icons.image_search_outlined),
+            title: const Text('Find missing artwork automatically'),
+            subtitle: const Text(
+              'Uses conservative song matches and embeds found covers into saved audio',
+            ),
+            value: app.automaticArtworkLookup,
+            onChanged: app.setAutomaticArtworkLookup,
+          ),
+          ListTile(
+            leading: app.artworkLookupRunning
+                ? const SizedBox.square(
+                    dimension: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.album_outlined),
+            title: Text(
+              app.artworkLookupRunning
+                  ? 'Looking for artwork…'
+                  : '${app.missingArtworkCount} songs missing artwork',
+            ),
+            subtitle:
+                app.artworkLookupUpdated == 0 && app.artworkLookupFailed == 0
+                ? const Text('Artwork errors never block playback or downloads')
+                : Text(
+                    '${app.artworkLookupUpdated} updated'
+                    '${app.artworkLookupFailed > 0 ? ', ${app.artworkLookupFailed} skipped after errors' : ''}',
+                  ),
+            trailing: TextButton(
+              onPressed:
+                  app.artworkLookupRunning || app.missingArtworkCount == 0
+                  ? null
+                  : app.lookupMissingArtwork,
+              child: const Text('Find now'),
+            ),
+          ),
+          const SizedBox(height: 24),
           Text('YouTube tools', style: Theme.of(context).textTheme.titleLarge),
           if (Platform.isAndroid)
             ListTile(

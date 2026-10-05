@@ -171,6 +171,68 @@ class YoutubeService {
   Future<Track> details(Track track) async =>
       _track(await _json(['--no-playlist', track.url]));
 
+  /// Finds a conservative artwork match without affecting normal search state.
+  Future<Track?> findArtwork({
+    required String title,
+    String artist = '',
+    String sourceTrackId = '',
+  }) async {
+    if (sourceTrackId.isNotEmpty) {
+      try {
+        final direct = await details(
+          Track(
+            id: sourceTrackId,
+            url: 'https://www.youtube.com/watch?v=$sourceTrackId',
+            title: title,
+            artist: artist,
+          ),
+        );
+        if (direct.artwork.isNotEmpty) return direct;
+      } catch (_) {}
+    }
+    final query = [
+      artist,
+      title,
+    ].where((value) => value.trim().isNotEmpty).join(' ');
+    if (query.isEmpty) return null;
+    final json = await _json(['--flat-playlist', 'ytsearch5:$query']);
+    for (final candidate in _entries(json)) {
+      if (candidate.artwork.isNotEmpty &&
+          _artworkMatch(title, artist, candidate)) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  static bool _artworkMatch(String title, String artist, Track candidate) {
+    final wantedTitle = _normalized(title);
+    final foundTitle = _normalized(candidate.title);
+    if (wantedTitle.isEmpty || foundTitle.isEmpty) return false;
+    final titleMatches =
+        wantedTitle == foundTitle ||
+        (wantedTitle.length >= 8 &&
+            (foundTitle.contains(wantedTitle) ||
+                wantedTitle.contains(foundTitle)));
+    if (!titleMatches) return false;
+    final wantedArtist = _normalized(artist);
+    if (wantedArtist.isEmpty) return true;
+    final foundArtist = _normalized(candidate.artist);
+    return foundArtist == wantedArtist ||
+        foundArtist.contains(wantedArtist) ||
+        wantedArtist.contains(foundArtist);
+  }
+
+  static String _normalized(String value) => value
+      .toLowerCase()
+      .replaceAll(RegExp(r'\([^)]*(official|video|audio|lyrics?)[^)]*\)'), ' ')
+      .replaceAll(
+        RegExp(r'\[[^\]]*(official|video|audio|lyrics?)[^\]]*\]'),
+        ' ',
+      )
+      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+      .trim();
+
   Future<String> streamUrl(Track track) async {
     if (!Platform.isLinux && !Platform.isAndroid) {
       throw const YoutubeFailure('Streaming is unavailable on this device.');

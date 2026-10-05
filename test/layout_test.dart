@@ -6,6 +6,7 @@ import 'package:own_yute/core/app_controller.dart';
 import 'package:own_yute/core/database.dart';
 import 'package:own_yute/core/models.dart';
 import 'package:own_yute/core/ui_helpers.dart';
+import 'package:own_yute/features/player/player_widgets.dart';
 import 'package:own_yute/main.dart';
 
 void main() {
@@ -114,7 +115,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
 
-    await tester.tap(find.text('Queue').last);
+    await tester.tap(find.text('Downloads').last);
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
 
@@ -164,6 +165,25 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.text('Select all'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    app.dispose();
+  });
+
+  testWidgets('expanded player keeps the scrubber visible', (tester) async {
+    final database = AppDatabase.forTesting(NativeDatabase.memory());
+    final app = AppController(database: database);
+    app.player.addToQueue(
+      const Track(id: 'preview', url: '/tmp/preview.mp3', title: 'Preview'),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: PlayerSheet(app: app)),
+      ),
+    );
+
+    expect(find.byType(Slider), findsOneWidget);
+    expect(tester.widget<Slider>(find.byType(Slider)).onChanged, isNull);
+    expect(find.text('--:--'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     app.dispose();
   });

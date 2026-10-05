@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -31,15 +32,17 @@ class AppController extends ChangeNotifier {
     AppDatabase? database,
     YoutubeService? youtube,
     DownloadService? downloader,
+    LibraryService? libraryService,
   }) : database = database ?? openAppDatabase(),
        youtube = youtube ?? YoutubeService(),
-       downloader = downloader ?? DownloadService() {
+       downloader = downloader ?? DownloadService(),
+       libraryService = libraryService ?? LibraryService() {
     player = PlayerController(this.youtube, onTrackStarted: recordPlay);
   }
   final AppDatabase database;
   final YoutubeService youtube;
   final DownloadService downloader;
-  final LibraryService libraryService = LibraryService();
+  final LibraryService libraryService;
   final YtDlpManager tools = YtDlpManager.shared;
   late final PlayerController player;
   List<Track> songs = [];
@@ -75,6 +78,10 @@ class AppController extends ChangeNotifier {
   ThemeMode themeMode = ThemeMode.system;
   AppThemeChoice themeChoice = AppThemeChoice.system;
   bool playerAnimationEnabled = true;
+  bool automaticArtworkLookup = true;
+  bool artworkLookupRunning = false;
+  int artworkLookupUpdated = 0;
+  int artworkLookupFailed = 0;
   int _batchSequence = 0;
   Widget? folderOverlay;
 
@@ -123,6 +130,8 @@ class AppController extends ChangeNotifier {
     };
     playerAnimationEnabled =
         (await database.setting('playerAnimationEnabled')) != 'false';
+    automaticArtworkLookup =
+        (await database.setting('automaticArtworkLookup')) != 'false';
     importedFolders =
         (await database.setting('folders'))
             ?.split('\n')
@@ -148,6 +157,7 @@ class AppController extends ChangeNotifier {
     await refreshLibrary();
     await player.restore();
     notifyListeners();
+    if (automaticArtworkLookup) unawaited(lookupMissingArtwork());
   }
 
   Future<void> setThemeMode(ThemeMode value) async {
@@ -177,6 +187,93 @@ class AppController extends ChangeNotifier {
     playerAnimationEnabled = value;
     await database.saveSetting('playerAnimationEnabled', value.toString());
     notifyListeners();
+  }
+
+  Future<void> setAutomaticArtworkLookup(bool value) async {
+    automaticArtworkLookup = value;
+    await database.saveSetting('automaticArtworkLookup', value.toString());
+    notifyListeners();
+    if (value) unawaited(lookupMissingArtwork());
+  }
+
+  int get missingArtworkCount =>
+      library.where((track) => track.artwork.trim().isEmpty).length;
+
+  bool isAvailableOffline(Track track) => library.any(
+    (saved) =>
+        saved.sourceTrackId == track.id ||
+        saved.path == track.url ||
+        saved.path == track.id,
+  );
+
+  bool isInDownloadQueue(Track track) =>
+      queue.any((item) => item.track.id == track.id);
+
+  bool isStreamedPreview(Track track) =>
+      track.url.startsWith('http') && !isAvailableOffline(track);
+
+  Future<void> saveOffline(Track track) => add(track);
+
+  Future<void> lookupMissingArtwork() async {
+    if (artworkLookupRunning) return;
+    artworkLookupRunning = true;
+    artworkLookupUpdated = 0;
+    artworkLookupFailed = 0;
+    notifyListeners();
+    try {
+      final missing = library
+          .where((track) => track.artwork.trim().isEmpty)
+          .toList();
+      for (final original in missing) {
+        final current = library.where((track) => track.path == original.path);
+        if (current.isEmpty || current.first.artwork.trim().isNotEmpty) {
+          continue;
+        }
+        try {
+          final match = await youtube.findArtwork(
+            title: original.title,
+            artist: original.artist,
+            sourceTrackId: original.sourceTrackId,
+          );
+          if (match == null || match.artwork.trim().isEmpty) continue;
+          await editLibrary(
+            current.first,
+            current.first.copyWith(artwork: match.artwork),
+          );
+          artworkLookupUpdated++;
+        } catch (_) {
+          artworkLookupFailed++;
+        }
+        notifyListeners();
+      }
+    } finally {
+      artworkLookupRunning = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Track> _artworkForDownload(Track track) async {
+    if (!automaticArtworkLookup || track.artwork.trim().isNotEmpty) {
+      return track;
+    }
+    try {
+      final match = await youtube.findArtwork(
+        title: track.title,
+        artist: track.artist,
+        sourceTrackId: track.id,
+      );
+      if (match == null || match.artwork.trim().isEmpty) return track;
+      final updated = track.copyWith(artwork: match.artwork);
+      final index = queue.indexWhere((item) => item.track.id == track.id);
+      if (index >= 0) {
+        queue[index] = queue[index].copyWith(track: updated);
+        await database.saveQueue(queue[index]);
+        notifyListeners();
+      }
+      return updated;
+    } catch (_) {
+      return track;
+    }
   }
 
   Future<String?> pickArtwork() async {
@@ -228,6 +325,8 @@ class AppController extends ChangeNotifier {
       if (!exists) {
         await database.removeLibrary(entry.path);
         library = library.where((track) => track.path != entry.path).toList();
+      } else if (entry.duration <= 0) {
+        await _repairMissingDuration(entry);
       }
     }
     for (final folder in importedFolders) {
@@ -300,7 +399,11 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _loadSongs(int generation, String term, {required bool full}) async {
+  Future<void> _loadSongs(
+    int generation,
+    String term, {
+    required bool full,
+  }) async {
     try {
       final result = await youtube.search(term, songs: full ? 0 : songBatch);
       if (generation != _searchGeneration) return;
@@ -317,7 +420,11 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _loadPlaylists(int generation, String term, {required bool full}) async {
+  Future<void> _loadPlaylists(
+    int generation,
+    String term, {
+    required bool full,
+  }) async {
     try {
       final result = await youtube.search(
         term,
@@ -338,7 +445,8 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _revealSongs(int generation) async {
-    while (generation == _searchGeneration && songs.length < _songCache.length) {
+    while (generation == _searchGeneration &&
+        songs.length < _songCache.length) {
       final next = _songCache.skip(songs.length).take(songBatch).toList();
       songs = _appendUnique(songs, next);
       notifyListeners();
@@ -355,10 +463,8 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _revealPlaylists(int generation) async {
-    while (
-      generation == _searchGeneration &&
-      playlists.length < _playlistCache.length
-    ) {
+    while (generation == _searchGeneration &&
+        playlists.length < _playlistCache.length) {
       final next = _playlistCache
           .skip(playlists.length)
           .take(playlistBatch)
@@ -578,7 +684,8 @@ class AppController extends ChangeNotifier {
       for (final item in List<QueueItem>.from(queue)) {
         if (cancelled) break;
         if (item.status == 'done') continue;
-        final fileName = downloader.fileName(item.track);
+        final downloadTrack = await _artworkForDownload(item.track);
+        final fileName = downloader.fileName(downloadTrack);
         final path = Platform.isAndroid
             ? '${await AndroidStorage.folderName(folder)}/$fileName'
             : p.join(folder, fileName);
@@ -598,11 +705,14 @@ class AppController extends ChangeNotifier {
           progress: 0,
         );
         try {
-          final saved = await downloader.download(item.track, folder, choice, (
-            progress,
-          ) {
-            _updateItem(item.track.id, progress: progress);
-          });
+          final saved = await downloader.download(
+            downloadTrack,
+            folder,
+            choice,
+            (progress) {
+              _updateItem(item.track.id, progress: progress);
+            },
+          );
           if (saved != null) {
             final membership = queue.firstWhere(
               (entry) => entry.track.id == item.track.id,
@@ -610,11 +720,14 @@ class AppController extends ChangeNotifier {
             );
             final libraryTrack = LibraryTrack(
               path: saved,
-              title: item.track.title,
-              artist: item.track.artist,
-              album: item.track.album,
-              artwork: item.track.artwork,
-              duration: item.track.duration,
+              title: downloadTrack.title,
+              artist: downloadTrack.artist,
+              album: downloadTrack.album,
+              artwork: downloadTrack.artwork,
+              duration: await _resolveSavedDuration(
+                saved,
+                downloadTrack.duration,
+              ),
               folder: folder,
               folderName: Platform.isAndroid
                   ? await AndroidStorage.folderName(folder)
@@ -649,6 +762,28 @@ class AppController extends ChangeNotifier {
       downloading = false;
       notifyListeners();
     }
+  }
+
+  /// YouTube search results carry no duration, so read the saved file to keep
+  /// the library entry's scrubber accurate. Falls back to [known] on failure.
+  Future<int> _resolveSavedDuration(String path, int known) async {
+    if (known > 0) return known;
+    return libraryService.readDuration(path);
+  }
+
+  /// Repairs library entries left without a duration, which would otherwise
+  /// hide the player's progress bar for already downloaded songs.
+  Future<void> _repairMissingDuration(LibraryTrack entry) async {
+    try {
+      final probed = await libraryService.readDuration(entry.path);
+      if (probed <= 0) return;
+      final updated = entry.copyWith(duration: probed);
+      await database.saveLibrary(updated);
+      library = [
+        ...library.where((track) => track.path != entry.path),
+        updated,
+      ];
+    } catch (_) {}
   }
 
   Future<void> _updateItem(
@@ -782,12 +917,22 @@ class AppController extends ChangeNotifier {
             }.contains(p.extension(entity.path).toLowerCase())) {
           continue;
         }
-        if (library.any((entry) => entry.path == entity.path)) continue;
-        final track = (await libraryService.readTrack(entity)).copyWith(
+        final known = library.where((entry) => entry.path == entity.path);
+        if (known.isNotEmpty && known.first.duration > 0) continue;
+        final scanned = (await libraryService.readTrack(entity)).copyWith(
           folder: p.dirname(entity.path),
           folderName: p.basename(p.dirname(entity.path)),
         );
-        library = [...library, track];
+        final track = known.isEmpty
+            ? scanned
+            : scanned.copyWith(
+                sourceTrackId: known.first.sourceTrackId,
+                playlists: known.first.playlists,
+                artwork: known.first.artwork.isNotEmpty
+                    ? known.first.artwork
+                    : scanned.artwork,
+              );
+        if (known.isEmpty) library = [...library, track];
         await database.saveLibrary(track);
       }
       notifyListeners();

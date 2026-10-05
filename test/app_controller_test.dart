@@ -7,6 +7,7 @@ import 'package:own_yute/core/app_controller.dart';
 import 'package:own_yute/core/database.dart';
 import 'package:own_yute/core/models.dart';
 import 'package:own_yute/features/downloads/download_service.dart';
+import 'package:own_yute/features/library/library_service.dart';
 import 'package:own_yute/features/search/youtube_service.dart';
 
 class FakeYoutube extends YoutubeService {
@@ -36,18 +37,42 @@ class FakeYoutube extends YoutubeService {
     );
     return SearchResults(
       songs: songs == 0 ? allSongs : allSongs.take(songs).toList(),
-      playlists:
-          playlists == 0 ? allPlaylists : allPlaylists.take(playlists).toList(),
+      playlists: playlists == 0
+          ? allPlaylists
+          : allPlaylists.take(playlists).toList(),
       songsTotal: allSongs.length,
       playlistsTotal: allPlaylists.length,
     );
   }
+
   @override
   Future<(Track?, List<Track>)> openUrl(String value) async {
     if (!isYoutubeUrl(value)) throw const YoutubeFailure('Invalid URL');
     if (value.contains('list=')) return (null, [song]);
     return (song, <Track>[]);
   }
+
+  @override
+  Future<Track?> findArtwork({
+    required String title,
+    String artist = '',
+    String sourceTrackId = '',
+  }) async => null;
+}
+
+class FakeArtworkYoutube extends FakeYoutube {
+  @override
+  Future<Track?> findArtwork({
+    required String title,
+    String artist = '',
+    String sourceTrackId = '',
+  }) async => Track(
+    id: sourceTrackId.isEmpty ? 'matched' : sourceTrackId,
+    url: 'https://www.youtube.com/watch?v=matched',
+    title: title,
+    artist: artist,
+    artwork: 'https://example.com/cover.jpg',
+  );
 }
 
 const song = Track(
@@ -60,6 +85,7 @@ class FakeDownloader extends DownloadService {
   FakeDownloader(this.folder);
   final Directory folder;
   DuplicateChoice? choice;
+  Track? downloadedTrack;
   @override
   Future<String?> download(
     Track track,
@@ -68,12 +94,34 @@ class FakeDownloader extends DownloadService {
     void Function(double) onProgress,
   ) async {
     choice = duplicate;
+    downloadedTrack = track;
     if (duplicate == DuplicateChoice.skip) return null;
     final file = File('$destination/${fileName(track)}');
     await file.parent.create(recursive: true);
     await file.writeAsString('audio');
     onProgress(1);
     return file.path;
+  }
+}
+
+class FakeLibraryService extends LibraryService {
+  FakeLibraryService(this.durations);
+  final Map<String, int> durations;
+  final List<String> read = [];
+
+  @override
+  Future<int> readDuration(String path) async {
+    read.add(path);
+    return durations[path] ?? 0;
+  }
+}
+
+class ArtworkEditDownloader extends DownloadService {
+  LibraryTrack? editedTrack;
+
+  @override
+  Future<void> editMetadata(LibraryTrack track) async {
+    editedTrack = track;
   }
 }
 
@@ -131,7 +179,9 @@ void main() {
     final youtube = FakeYoutube();
     final app = AppController(database: database, youtube: youtube);
     AppController.revealDelay = Duration.zero;
-    addTearDown(() => AppController.revealDelay = const Duration(milliseconds: 250));
+    addTearDown(
+      () => AppController.revealDelay = const Duration(milliseconds: 250),
+    );
     await app.initialize();
     await app.search('music');
     expect(app.songs, hasLength(5));
@@ -151,12 +201,13 @@ void main() {
     await app.loadMorePlaylists();
     expect(app.playlists, hasLength(20));
     expect(app.playlistsExhausted, isTrue);
+    expect(youtube.fullSearches, 2);
 
     await app.search('other');
     expect(app.songs, hasLength(5));
     expect(app.playlists, hasLength(5));
     expect(app.songsExhausted, isFalse);
-    expect(youtube.fullSearches, 1);
+    expect(youtube.fullSearches, 2);
     app.player.dispose();
     await database.close();
   });
@@ -211,8 +262,17 @@ void main() {
     expect(restored.themeMode, ThemeMode.light);
     expect(restored.themeChoice, AppThemeChoice.pastelPink);
     expect(restored.playerAnimationEnabled, false);
+    expect(restored.automaticArtworkLookup, true);
+    await restored.setAutomaticArtworkLookup(false);
+    final artworkSetting = AppController(
+      database: database,
+      youtube: FakeYoutube(),
+    );
+    await artworkSetting.initialize();
+    expect(artworkSetting.automaticArtworkLookup, false);
     first.player.dispose();
     restored.player.dispose();
+    artworkSetting.player.dispose();
     await database.close();
   });
 
@@ -367,4 +427,117 @@ void main() {
     expect(app.queue.single.error, contains('HTTP 403'));
     app.dispose();
   });
+
+  test('download-time artwork lookup is best effort and persisted', () async {
+    final directory = await Directory.systemTemp.createTemp('own_yute_art_');
+    addTearDown(() => directory.delete(recursive: true));
+    final database = AppDatabase.forTesting(NativeDatabase.memory());
+    final downloader = FakeDownloader(directory);
+    final app = AppController(
+      database: database,
+      youtube: FakeArtworkYoutube(),
+      downloader: downloader,
+    );
+    await app.initialize();
+    await app.add(song);
+    await app.downloadQueue(
+      directory.path,
+      (_) async => DuplicateChoice.replace,
+    );
+    expect(downloader.downloadedTrack?.artwork, contains('cover.jpg'));
+    expect(app.library.single.artwork, contains('cover.jpg'));
+    app.dispose();
+  });
+
+  test(
+    'a download records the real file duration when search gave none',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('own_yute_dur_');
+      addTearDown(() => directory.delete(recursive: true));
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      final saved = File('${directory.path}/One.mp3');
+      final libraryService = FakeLibraryService({saved.path: 187});
+      final app = AppController(
+        database: database,
+        youtube: FakeYoutube(),
+        downloader: FakeDownloader(directory),
+        libraryService: libraryService,
+      );
+      await app.initialize();
+      await app.add(song);
+      await app.downloadQueue(
+        directory.path,
+        (_) async => DuplicateChoice.replace,
+      );
+
+      expect(app.library.single.duration, 187);
+      expect((await database.loadLibrary()).single.duration, 187);
+      expect(libraryService.read, contains(saved.path));
+      app.dispose();
+    },
+  );
+
+  test('refresh repairs library entries saved without a duration', () async {
+    final directory = await Directory.systemTemp.createTemp('own_yute_rep_');
+    addTearDown(() => directory.delete(recursive: true));
+    final file = File('${directory.path}/song.mp3');
+    await file.writeAsString('audio');
+    final database = AppDatabase.forTesting(NativeDatabase.memory());
+    await database.saveLibrary(
+      LibraryTrack(path: file.path, title: 'Song', sourceTrackId: 'one'),
+    );
+    final libraryService = FakeLibraryService({file.path: 240});
+    final app = AppController(
+      database: database,
+      youtube: FakeYoutube(),
+      libraryService: libraryService,
+    );
+
+    // initialize() probes missing durations through refreshLibrary().
+    await app.initialize();
+
+    expect(app.library.single.duration, 240);
+    expect((await database.loadLibrary()).single.duration, 240);
+    expect(libraryService.read, contains(file.path));
+    app.dispose();
+  });
+
+  test(
+    'missing library artwork updates display data and audio metadata',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'own_yute_art_edit_',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final file = File('${directory.path}/song.mp3');
+      await file.writeAsString('audio');
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      await database.saveSetting('automaticArtworkLookup', 'false');
+      await database.saveLibrary(
+        LibraryTrack(
+          path: file.path,
+          title: 'One',
+          artist: 'Artist',
+          sourceTrackId: 'one',
+        ),
+      );
+      final downloader = ArtworkEditDownloader();
+      final app = AppController(
+        database: database,
+        youtube: FakeArtworkYoutube(),
+        downloader: downloader,
+      );
+      await app.initialize();
+
+      await app.lookupMissingArtwork();
+
+      expect(app.library.single.artwork, contains('cover.jpg'));
+      expect(downloader.editedTrack?.artwork, contains('cover.jpg'));
+      expect(
+        (await database.loadLibrary()).single.artwork,
+        contains('cover.jpg'),
+      );
+      app.dispose();
+    },
+  );
 }

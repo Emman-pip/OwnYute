@@ -20,11 +20,13 @@ class TrackTile extends StatelessWidget {
     required this.track,
     required this.onTap,
     this.trailing,
+    this.onAddToPlaybackQueue,
     this.fullTitle = false,
   });
   final Track track;
   final VoidCallback onTap;
   final Widget? trailing;
+  final VoidCallback? onAddToPlaybackQueue;
   final bool fullTitle;
   @override
   Widget build(BuildContext context) => ListTile(
@@ -46,7 +48,19 @@ class TrackTile extends StatelessWidget {
       overflow: fullTitle ? TextOverflow.visible : TextOverflow.ellipsis,
     ),
     subtitle: Text(track.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
-    trailing: trailing,
+    trailing: onAddToPlaybackQueue == null
+        ? trailing
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: 'Add to playback queue',
+                icon: const Icon(Icons.queue_music),
+                onPressed: onAddToPlaybackQueue,
+              ),
+              ?trailing,
+            ],
+          ),
     onTap: onTap,
   );
 }
@@ -68,13 +82,21 @@ Future<void> showTrackDialog(
           icon: const Icon(Icons.play_arrow),
           label: const Text('Preview'),
         ),
+        TextButton.icon(
+          onPressed: () {
+            app.player.addToQueue(track);
+            Navigator.pop(context);
+          },
+          icon: const Icon(Icons.queue_music),
+          label: const Text('Queue'),
+        ),
         FilledButton(
           onPressed: () async {
-            await app.add(track);
+            await app.saveOffline(track);
             if (context.mounted) Navigator.pop(context);
             onQueue();
           },
-          child: const Text('Add to queue'),
+          child: const Text('Save offline'),
         ),
       ],
     ),
@@ -140,10 +162,21 @@ Future<void> showPlaylistDialog(
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        secondary: IconButton(
-                          tooltip: 'Preview',
-                          icon: const Icon(Icons.play_arrow),
-                          onPressed: () => app.player.playTracks(tracks, index),
+                        secondary: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: 'Preview',
+                              icon: const Icon(Icons.play_arrow),
+                              onPressed: () =>
+                                  app.player.playTracks(tracks, index),
+                            ),
+                            IconButton(
+                              tooltip: 'Add to playback queue',
+                              icon: const Icon(Icons.queue_music),
+                              onPressed: () => app.player.addToQueue(track),
+                            ),
+                          ],
                         ),
                         onChanged: (value) => setDialogState(() {
                           if (value == true) {

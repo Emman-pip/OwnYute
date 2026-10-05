@@ -188,6 +188,14 @@ class _SearchPageState extends State<SearchPage> {
             (track) => TrackTile(
               track: track,
               onTap: () => showTrackDialog(context, app, track, widget.onQueue),
+              onAddToPlaybackQueue: () {
+                app.player.addToQueue(track);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('${track.title} added to playback queue.'),
+                  ),
+                );
+              },
             ),
           ),
           if (!app.songsExhausted)
@@ -288,8 +296,9 @@ class _SearchPageState extends State<SearchPage> {
               ),
             ),
           const SectionTitle('Storage folders'),
-          for (final entry in physical.entries
-              .take(showAllStorageFolders ? physical.length : 4))
+          for (final entry in physical.entries.take(
+            showAllStorageFolders ? physical.length : 4,
+          ))
             FolderTile(
               icon: Icons.folder_open_outlined,
               title: entry.value.first.folderName.isNotEmpty
