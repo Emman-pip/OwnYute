@@ -41,7 +41,7 @@ The current release build uses Flutter's debug signing key so it can be installe
 3. Add tracks to Queue. Long song titles wrap so the full name remains visible on a phone. Each **Add selected** action creates a collapsible batch; individual additions appear in **Singles**. A song shared by batches downloads once and appears in each batch. Use a queued song's menu to assign it to an existing or new virtual playlist folder before downloading. Edit a batch with its pencil button, or use the top menu to edit all queued items, cancel downloads, or **Clear finished items**. Clearing finished items leaves saved files and Library entries intact. Choose a destination and an optional physical folder. Existing files prompt **Skip**, **Replace**, or **Keep both**.
 4. Downloads run sequentially. OwnYute requests the best available source audio, converts it to high quality variable bitrate MP3 with FFmpeg, and writes title, artist, album, and optional cover artwork. Failed or interrupted items remain in the queue for retry.
 5. Library offers separate **Import folder** and **Import audio files** cards. Search by song, artist, album, or playlist. Browse **All songs**, virtual **Playlist folders**, and physical **Storage folders**. Downloaded playlist tracks are assigned to their source playlist folder. The same saved file can appear in multiple playlist folders. Use a song's menu to add existing music to a playlist folder, edit metadata, move its file, or delete it from storage and the app. The delete button on a playlist folder deletes all its member audio files and library entries, including songs shared with other playlists, after confirmation. Metadata editing briefly stops playback of that song and resumes near the previous position. A failed edit leaves the library entry and original audio in place.
-6. Choose **System**, **Light**, **Dark**, **Pastel Blue**, or **Pastel Pink** in Settings. Animated artwork in the expanded player can be disabled there and follows the device's reduced motion setting. The layout adapts from phone navigation to a wider desktop rail.
+6. Choose **System**, **Light**, **Dark**, **Dark Blue**, **Dark Pink**, **Pastel Blue**, or **Pastel Pink** in Settings. Animated artwork in the expanded player can be disabled there and follows the device's reduced motion setting. The layout adapts from phone navigation to a wider desktop rail.
 
 ## Development checks
 
@@ -53,5 +53,15 @@ flutter build apk
 ```
 
 Offline checks run with `flutter test tool/verify_services_test.dart`, `flutter test tool/verify_database_test.dart`, and `flutter test tool/verify_download_test.dart`. The download check requires FFmpeg and FFprobe. Flutter unit tests are in `test/`.
+
+## Branding assets
+
+The editable logo master is `assets/branding/ownyute_logo.svg`. Android launcher icons and the Linux window icon are generated from it. Install `rsvg-convert` (`librsvg2-bin` on Debian or Ubuntu), then regenerate every size with:
+
+```sh
+tool/generate_app_icons.sh
+```
+
+Android includes legacy, adaptive, round, and monochrome themed icons. Linux builds bundle the GTK window icon, a desktop entry, and standard hicolor assets for packaging.
 
 For Android verification, use a connected device to search, open a song URL (including a radio mix watch URL), preview it, download it, and play the downloaded MP3. Import and play a known-good MP3 separately, then repeat playback after restarting the app. If a step fails, copy **Build and crash report** from Settings after reopening the app. Capture `adb logcat -d -v time` when ADB is available.

@@ -151,6 +151,26 @@ void main() {
     await database.close();
   });
 
+  test('complementary dark themes use dark mode and persist', () async {
+    final database = AppDatabase.forTesting(NativeDatabase.memory());
+    final first = AppController(database: database, youtube: FakeYoutube());
+    await first.initialize();
+
+    await first.setThemeChoice(AppThemeChoice.darkBlue);
+    expect(first.themeMode, ThemeMode.dark);
+    await first.setThemeChoice(AppThemeChoice.darkPink);
+    expect(first.themeMode, ThemeMode.dark);
+
+    final restored = AppController(database: database, youtube: FakeYoutube());
+    await restored.initialize();
+    expect(restored.themeChoice, AppThemeChoice.darkPink);
+    expect(restored.themeMode, ThemeMode.dark);
+
+    first.player.dispose();
+    restored.player.dispose();
+    await database.close();
+  });
+
   test(
     'playlist batches share a single download and clear finished rows only',
     () async {

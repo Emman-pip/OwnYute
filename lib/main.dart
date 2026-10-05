@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/app_controller.dart';
+import 'core/app_logo.dart';
 import 'core/app_themes.dart';
 import 'core/crash_diagnostics.dart';
 import 'features/search/search_page.dart';
@@ -45,7 +46,7 @@ class OwnYuteApp extends ConsumerWidget {
         title: 'OwnYute',
         themeMode: app.themeMode,
         theme: AppThemes.light(app.themeChoice),
-        darkTheme: AppThemes.dark(),
+        darkTheme: AppThemes.dark(app.themeChoice),
         home: const HomeScreen(),
       ),
     );
@@ -74,7 +75,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ][page];
         return Scaffold(
           appBar: AppBar(
-            title: const Text('OwnYute'),
+            title: const AppBrandTitle(),
             actions: [
               IconButton(
                 tooltip: 'Settings',

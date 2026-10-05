@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/app_controller.dart';
+import '../../core/app_logo.dart';
 import '../../core/crash_diagnostics.dart';
 
 class SettingsPage extends StatelessWidget {
@@ -22,7 +23,12 @@ class SettingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Settings')),
+    appBar: AppBar(
+      title: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [AppLogo(size: 32), SizedBox(width: 10), Text('Settings')],
+      ),
+    ),
     body: ListenableBuilder(
       listenable: app,
       builder: (context, _) => ListView(
@@ -48,6 +54,8 @@ class SettingsPage extends StatelessWidget {
                     AppThemeChoice.system => 'System',
                     AppThemeChoice.light => 'Light',
                     AppThemeChoice.dark => 'Dark',
+                    AppThemeChoice.darkBlue => 'Dark Blue',
+                    AppThemeChoice.darkPink => 'Dark Pink',
                     AppThemeChoice.pastelBlue => 'Pastel Blue',
                     AppThemeChoice.pastelPink => 'Pastel Pink',
                   }),
@@ -83,27 +91,38 @@ class SettingsPage extends StatelessWidget {
             ),
           ListenableBuilder(
             listenable: app.tools,
-            builder: (context, _) => Column(
-              children: [
-                ListTile(
+            builder: (context, _) => LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 430;
+                final action = app.tools.updating
+                    ? const SizedBox.square(
+                        dimension: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : OutlinedButton(
+                        onPressed: () => app.tools.check(force: true),
+                        child: const Text('Check now'),
+                      );
+                final status = Text(
+                  app.tools.updating
+                      ? 'Checking for an update…'
+                      : app.tools.lastError ??
+                            (app.tools.version == null
+                                ? 'Checks before the first YouTube action each day'
+                                : 'Available version: ${app.tools.version}'),
+                );
+                return ListTile(
                   leading: const Icon(Icons.system_update),
                   title: const Text('yt-dlp nightly'),
-                  subtitle: Text(
-                    app.tools.updating
-                        ? 'Checking for an update…'
-                        : app.tools.lastError ??
-                              (app.tools.version == null
-                                  ? 'Checks before the first YouTube action each day'
-                                  : 'Available version: ${app.tools.version}'),
-                  ),
-                  trailing: app.tools.updating
-                      ? const CircularProgressIndicator()
-                      : OutlinedButton(
-                          onPressed: () => app.tools.check(force: true),
-                          child: const Text('Check now'),
-                        ),
-                ),
-              ],
+                  subtitle: compact
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [status, const SizedBox(height: 8), action],
+                        )
+                      : status,
+                  trailing: compact ? null : action,
+                );
+              },
             ),
           ),
           const SizedBox(height: 24),

@@ -15,7 +15,15 @@ import '../features/search/youtube_service.dart';
 import '../features/player/player_controller.dart';
 import '../features/library/library_service.dart';
 
-enum AppThemeChoice { system, light, dark, pastelBlue, pastelPink }
+enum AppThemeChoice {
+  system,
+  light,
+  dark,
+  darkBlue,
+  darkPink,
+  pastelBlue,
+  pastelPink,
+}
 
 class AppController extends ChangeNotifier {
   AppController({
@@ -73,7 +81,9 @@ class AppController extends ChangeNotifier {
     );
     themeMode = switch (themeChoice) {
       AppThemeChoice.pastelBlue || AppThemeChoice.pastelPink => ThemeMode.light,
-      AppThemeChoice.dark => ThemeMode.dark,
+      AppThemeChoice.dark ||
+      AppThemeChoice.darkBlue ||
+      AppThemeChoice.darkPink => ThemeMode.dark,
       AppThemeChoice.light => ThemeMode.light,
       _ => ThemeMode.system,
     };
@@ -116,7 +126,9 @@ class AppController extends ChangeNotifier {
   Future<void> setThemeChoice(AppThemeChoice value) async {
     themeChoice = value;
     themeMode = switch (value) {
-      AppThemeChoice.dark => ThemeMode.dark,
+      AppThemeChoice.dark ||
+      AppThemeChoice.darkBlue ||
+      AppThemeChoice.darkPink => ThemeMode.dark,
       AppThemeChoice.light ||
       AppThemeChoice.pastelBlue ||
       AppThemeChoice.pastelPink => ThemeMode.light,

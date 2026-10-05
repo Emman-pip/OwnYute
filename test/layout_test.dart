@@ -21,6 +21,7 @@ void main() {
         child: const OwnYuteApp(),
       ),
     );
+    expect(find.bySemanticsLabel('OwnYute logo'), findsOneWidget);
     await tester.tap(find.byTooltip('Settings'));
     await tester.pumpAndSettle();
 
@@ -35,6 +36,21 @@ void main() {
     final pink = tester.widget<MaterialApp>(find.byType(MaterialApp)).theme!;
     expect(pink.colorScheme.primary, const Color(0xffaa5279));
     expect(pink.scaffoldBackgroundColor, const Color(0xfffff1f7));
+
+    await tester.tap(find.text('Dark Blue'));
+    await tester.pumpAndSettle();
+    expect(app.themeMode, ThemeMode.dark);
+    final darkBlue = tester
+        .widget<MaterialApp>(find.byType(MaterialApp))
+        .darkTheme!;
+    expect(darkBlue.colorScheme.primary, const Color(0xff8cc8ff));
+
+    await tester.tap(find.text('Dark Pink'));
+    await tester.pumpAndSettle();
+    final darkPink = tester
+        .widget<MaterialApp>(find.byType(MaterialApp))
+        .darkTheme!;
+    expect(darkPink.colorScheme.primary, const Color(0xffff9bc2));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     app.dispose();
