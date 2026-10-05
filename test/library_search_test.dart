@@ -65,7 +65,7 @@ void main() {
     expect(find.text('Blue Sky'), findsWidgets);
     expect(find.text('Pink Cloud'), findsWidgets);
     expect(find.byType(Checkbox), findsNWidgets(2));
-    await tester.tap(find.text('Select all visible songs'));
+    await tester.tap(find.text('Select all songs'));
     await tester.pump();
     expect(find.text('2 selected'), findsOneWidget);
     await tester.tap(find.byTooltip('Add selected songs to playlist'));

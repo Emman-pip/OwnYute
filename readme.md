@@ -18,7 +18,7 @@ OwnYute wraps [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) and FFmpeg in a nativ
 
 ### Search and add
 
-Search YouTube, or use **Paste URL** for a song or playlist. Tap a result to preview or queue it.
+Search your downloaded library and YouTube from one bar, or use **Paste URL** for a song or playlist. Tap a result to preview or queue it. With an empty search, the dashboard shows your recently played tracks in a horizontal row plus your playlist and storage folders; folder tiles open their contents on a dedicated page.
 
 | Search results | Track actions |
 | --- | --- |
@@ -32,7 +32,7 @@ Batch downloads are grouped and collapsible; individual additions appear under *
 
 ### Library
 
-**All songs** starts collapsed, followed by virtual playlist folders and physical storage folders. Use **Select** to pick several songs and add them to a playlist in one step.
+**All songs** starts collapsed, followed by virtual playlist folders and physical storage folders. Folder tiles open a dedicated page with their tracks. Use **Select** to pick several songs and add them to a playlist in one step. The library search is limited to downloaded songs and shows only matching results.
 
 | Library | All songs expanded | Multi-select |
 | --- | --- | --- |

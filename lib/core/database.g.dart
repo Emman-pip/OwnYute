@@ -673,6 +673,265 @@ class HistoryRowsCompanion extends UpdateCompanion<HistoryRow> {
   }
 }
 
+class $PlayHistoryRowsTable extends PlayHistoryRows
+    with TableInfo<$PlayHistoryRowsTable, PlayHistoryRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $PlayHistoryRowsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _dataMeta = const VerificationMeta('data');
+  @override
+  late final GeneratedColumn<String> data = GeneratedColumn<String>(
+    'data',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _savedAtMeta = const VerificationMeta(
+    'savedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> savedAt = GeneratedColumn<DateTime>(
+    'saved_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, data, savedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'play_history_rows';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<PlayHistoryRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('data')) {
+      context.handle(
+        _dataMeta,
+        this.data.isAcceptableOrUnknown(data['data']!, _dataMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_dataMeta);
+    }
+    if (data.containsKey('saved_at')) {
+      context.handle(
+        _savedAtMeta,
+        savedAt.isAcceptableOrUnknown(data['saved_at']!, _savedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_savedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  PlayHistoryRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return PlayHistoryRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      data: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}data'],
+      )!,
+      savedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}saved_at'],
+      )!,
+    );
+  }
+
+  @override
+  $PlayHistoryRowsTable createAlias(String alias) {
+    return $PlayHistoryRowsTable(attachedDatabase, alias);
+  }
+}
+
+class PlayHistoryRow extends DataClass implements Insertable<PlayHistoryRow> {
+  final String id;
+  final String data;
+  final DateTime savedAt;
+  const PlayHistoryRow({
+    required this.id,
+    required this.data,
+    required this.savedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['data'] = Variable<String>(data);
+    map['saved_at'] = Variable<DateTime>(savedAt);
+    return map;
+  }
+
+  PlayHistoryRowsCompanion toCompanion(bool nullToAbsent) {
+    return PlayHistoryRowsCompanion(
+      id: Value(id),
+      data: Value(data),
+      savedAt: Value(savedAt),
+    );
+  }
+
+  factory PlayHistoryRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return PlayHistoryRow(
+      id: serializer.fromJson<String>(json['id']),
+      data: serializer.fromJson<String>(json['data']),
+      savedAt: serializer.fromJson<DateTime>(json['savedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'data': serializer.toJson<String>(data),
+      'savedAt': serializer.toJson<DateTime>(savedAt),
+    };
+  }
+
+  PlayHistoryRow copyWith({String? id, String? data, DateTime? savedAt}) =>
+      PlayHistoryRow(
+        id: id ?? this.id,
+        data: data ?? this.data,
+        savedAt: savedAt ?? this.savedAt,
+      );
+  PlayHistoryRow copyWithCompanion(PlayHistoryRowsCompanion data) {
+    return PlayHistoryRow(
+      id: data.id.present ? data.id.value : this.id,
+      data: data.data.present ? data.data.value : this.data,
+      savedAt: data.savedAt.present ? data.savedAt.value : this.savedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PlayHistoryRow(')
+          ..write('id: $id, ')
+          ..write('data: $data, ')
+          ..write('savedAt: $savedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, data, savedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PlayHistoryRow &&
+          other.id == this.id &&
+          other.data == this.data &&
+          other.savedAt == this.savedAt);
+}
+
+class PlayHistoryRowsCompanion extends UpdateCompanion<PlayHistoryRow> {
+  final Value<String> id;
+  final Value<String> data;
+  final Value<DateTime> savedAt;
+  final Value<int> rowid;
+  const PlayHistoryRowsCompanion({
+    this.id = const Value.absent(),
+    this.data = const Value.absent(),
+    this.savedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  PlayHistoryRowsCompanion.insert({
+    required String id,
+    required String data,
+    required DateTime savedAt,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       data = Value(data),
+       savedAt = Value(savedAt);
+  static Insertable<PlayHistoryRow> custom({
+    Expression<String>? id,
+    Expression<String>? data,
+    Expression<DateTime>? savedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (data != null) 'data': data,
+      if (savedAt != null) 'saved_at': savedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  PlayHistoryRowsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? data,
+    Value<DateTime>? savedAt,
+    Value<int>? rowid,
+  }) {
+    return PlayHistoryRowsCompanion(
+      id: id ?? this.id,
+      data: data ?? this.data,
+      savedAt: savedAt ?? this.savedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (data.present) {
+      map['data'] = Variable<String>(data.value);
+    }
+    if (savedAt.present) {
+      map['saved_at'] = Variable<DateTime>(savedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PlayHistoryRowsCompanion(')
+          ..write('id: $id, ')
+          ..write('data: $data, ')
+          ..write('savedAt: $savedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $SettingsRowsTable extends SettingsRows
     with TableInfo<$SettingsRowsTable, SettingsRow> {
   @override
@@ -887,6 +1146,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $QueueRowsTable queueRows = $QueueRowsTable(this);
   late final $LibraryRowsTable libraryRows = $LibraryRowsTable(this);
   late final $HistoryRowsTable historyRows = $HistoryRowsTable(this);
+  late final $PlayHistoryRowsTable playHistoryRows = $PlayHistoryRowsTable(
+    this,
+  );
   late final $SettingsRowsTable settingsRows = $SettingsRowsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
@@ -896,6 +1158,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     queueRows,
     libraryRows,
     historyRows,
+    playHistoryRows,
     settingsRows,
   ];
 }
@@ -1325,6 +1588,174 @@ typedef $$HistoryRowsTableProcessedTableManager =
       HistoryRow,
       PrefetchHooks Function()
     >;
+typedef $$PlayHistoryRowsTableCreateCompanionBuilder =
+    PlayHistoryRowsCompanion Function({
+      required String id,
+      required String data,
+      required DateTime savedAt,
+      Value<int> rowid,
+    });
+typedef $$PlayHistoryRowsTableUpdateCompanionBuilder =
+    PlayHistoryRowsCompanion Function({
+      Value<String> id,
+      Value<String> data,
+      Value<DateTime> savedAt,
+      Value<int> rowid,
+    });
+
+class $$PlayHistoryRowsTableFilterComposer
+    extends Composer<_$AppDatabase, $PlayHistoryRowsTable> {
+  $$PlayHistoryRowsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get data => $composableBuilder(
+    column: $table.data,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get savedAt => $composableBuilder(
+    column: $table.savedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$PlayHistoryRowsTableOrderingComposer
+    extends Composer<_$AppDatabase, $PlayHistoryRowsTable> {
+  $$PlayHistoryRowsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get data => $composableBuilder(
+    column: $table.data,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get savedAt => $composableBuilder(
+    column: $table.savedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$PlayHistoryRowsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $PlayHistoryRowsTable> {
+  $$PlayHistoryRowsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get data =>
+      $composableBuilder(column: $table.data, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get savedAt =>
+      $composableBuilder(column: $table.savedAt, builder: (column) => column);
+}
+
+class $$PlayHistoryRowsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $PlayHistoryRowsTable,
+          PlayHistoryRow,
+          $$PlayHistoryRowsTableFilterComposer,
+          $$PlayHistoryRowsTableOrderingComposer,
+          $$PlayHistoryRowsTableAnnotationComposer,
+          $$PlayHistoryRowsTableCreateCompanionBuilder,
+          $$PlayHistoryRowsTableUpdateCompanionBuilder,
+          (
+            PlayHistoryRow,
+            BaseReferences<
+              _$AppDatabase,
+              $PlayHistoryRowsTable,
+              PlayHistoryRow
+            >,
+          ),
+          PlayHistoryRow,
+          PrefetchHooks Function()
+        > {
+  $$PlayHistoryRowsTableTableManager(
+    _$AppDatabase db,
+    $PlayHistoryRowsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$PlayHistoryRowsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$PlayHistoryRowsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$PlayHistoryRowsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> data = const Value.absent(),
+                Value<DateTime> savedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PlayHistoryRowsCompanion(
+                id: id,
+                data: data,
+                savedAt: savedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String data,
+                required DateTime savedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => PlayHistoryRowsCompanion.insert(
+                id: id,
+                data: data,
+                savedAt: savedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$PlayHistoryRowsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $PlayHistoryRowsTable,
+      PlayHistoryRow,
+      $$PlayHistoryRowsTableFilterComposer,
+      $$PlayHistoryRowsTableOrderingComposer,
+      $$PlayHistoryRowsTableAnnotationComposer,
+      $$PlayHistoryRowsTableCreateCompanionBuilder,
+      $$PlayHistoryRowsTableUpdateCompanionBuilder,
+      (
+        PlayHistoryRow,
+        BaseReferences<_$AppDatabase, $PlayHistoryRowsTable, PlayHistoryRow>,
+      ),
+      PlayHistoryRow,
+      PrefetchHooks Function()
+    >;
 typedef $$SettingsRowsTableCreateCompanionBuilder =
     SettingsRowsCompanion Function({
       required String key,
@@ -1473,6 +1904,8 @@ class $AppDatabaseManager {
       $$LibraryRowsTableTableManager(_db, _db.libraryRows);
   $$HistoryRowsTableTableManager get historyRows =>
       $$HistoryRowsTableTableManager(_db, _db.historyRows);
+  $$PlayHistoryRowsTableTableManager get playHistoryRows =>
+      $$PlayHistoryRowsTableTableManager(_db, _db.playHistoryRows);
   $$SettingsRowsTableTableManager get settingsRows =>
       $$SettingsRowsTableTableManager(_db, _db.settingsRows);
 }

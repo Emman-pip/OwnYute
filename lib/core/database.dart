@@ -26,6 +26,14 @@ class HistoryRows extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+class PlayHistoryRows extends Table {
+  TextColumn get id => text()();
+  TextColumn get data => text()();
+  DateTimeColumn get savedAt => dateTime()();
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 class SettingsRows extends Table {
   TextColumn get key => text()();
   TextColumn get value => text()();
@@ -33,12 +41,23 @@ class SettingsRows extends Table {
   Set<Column> get primaryKey => {key};
 }
 
-@DriftDatabase(tables: [QueueRows, LibraryRows, HistoryRows, SettingsRows])
+@DriftDatabase(
+  tables: [QueueRows, LibraryRows, HistoryRows, PlayHistoryRows, SettingsRows],
+)
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.executor);
   AppDatabase.forTesting(super.executor);
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+    onUpgrade: (migrator, from, to) async {
+      if (from < 2) {
+        await migrator.createTable(playHistoryRows);
+      }
+    },
+  );
 
   Future<List<QueueItem>> loadQueue() async => (await select(queueRows).get())
       .map((row) => QueueItem.fromJson(decodeJson(row.data)))
@@ -83,6 +102,20 @@ class AppDatabase extends _$AppDatabase {
   Future<List<Track>> loadHistory() async =>
       (await (select(
             historyRows,
+          )..orderBy([(row) => OrderingTerm.desc(row.savedAt)])).get())
+          .map((row) => Track.fromJson(decodeJson(row.data)))
+          .toList();
+  Future<void> savePlayHistory(Track track) =>
+      into(playHistoryRows).insertOnConflictUpdate(
+        PlayHistoryRowsCompanion.insert(
+          id: track.id,
+          data: encodeJson(track.toJson()),
+          savedAt: DateTime.now(),
+        ),
+      );
+  Future<List<Track>> loadPlayHistory() async =>
+      (await (select(
+            playHistoryRows,
           )..orderBy([(row) => OrderingTerm.desc(row.savedAt)])).get())
           .map((row) => Track.fromJson(decodeJson(row.data)))
           .toList();

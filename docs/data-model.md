@@ -68,6 +68,7 @@ A saved audio file in the local library.
 | `queue_rows` | `id` | `data` (JSON `QueueItem`) |
 | `library_rows` | `path` | `data` (JSON `LibraryTrack`) |
 | `history_rows` | `id` | `data` (JSON `Track`), `saved_at` |
+| `play_history_rows` | `id` | `data` (JSON `Track`), `saved_at` |
 | `settings_rows` | `key` | `value` |
 
 ### Key behaviors

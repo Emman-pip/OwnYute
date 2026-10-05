@@ -15,9 +15,13 @@ class EditPlaybackSnapshot {
 }
 
 class PlayerController extends ChangeNotifier {
-  PlayerController(this.youtube, {bool? android, MethodChannel? channel})
-    : _isAndroid = android ?? Platform.isAndroid,
-      _android = channel ?? const MethodChannel('own_yute/player') {
+  PlayerController(
+    this.youtube, {
+    bool? android,
+    MethodChannel? channel,
+    this.onTrackStarted,
+  }) : _isAndroid = android ?? Platform.isAndroid,
+       _android = channel ?? const MethodChannel('own_yute/player') {
     if (_isAndroid) {
       _android.setMethodCallHandler(
         (call) => handlePlatformEvent(call.method, call.arguments),
@@ -25,6 +29,7 @@ class PlayerController extends ChangeNotifier {
     }
   }
   final YoutubeService youtube;
+  final ValueChanged<Track>? onTrackStarted;
   final bool _isAndroid;
   final MethodChannel _android;
   final List<Track> queue = [];
@@ -156,6 +161,7 @@ class PlayerController extends ChangeNotifier {
   Future<void> _start() async {
     final track = current;
     if (track == null) return;
+    onTrackStarted?.call(track);
     try {
       await _stopProcess();
       preparing = true;

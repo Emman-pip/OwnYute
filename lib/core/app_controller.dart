@@ -34,7 +34,7 @@ class AppController extends ChangeNotifier {
   }) : database = database ?? openAppDatabase(),
        youtube = youtube ?? YoutubeService(),
        downloader = downloader ?? DownloadService() {
-    player = PlayerController(this.youtube);
+    player = PlayerController(this.youtube, onTrackStarted: recordPlay);
   }
   final AppDatabase database;
   final YoutubeService youtube;
@@ -46,6 +46,7 @@ class AppController extends ChangeNotifier {
   List<Track> playlists = [];
   List<Track> picker = [];
   PlaylistRef? pickerPlaylist;
+  List<Track> recentPlays = [];
   List<Track> history = [];
   List<QueueItem> queue = [];
   List<LibraryTrack> library = [];
@@ -62,6 +63,12 @@ class AppController extends ChangeNotifier {
   bool playerAnimationEnabled = true;
   int _batchSequence = 0;
 
+  Future<void> recordPlay(Track track) async {
+    await database.savePlayHistory(track);
+    recentPlays = await database.loadPlayHistory();
+    notifyListeners();
+  }
+
   void clearError() {
     error = null;
     notifyListeners();
@@ -71,6 +78,7 @@ class AppController extends ChangeNotifier {
     queue = await database.loadQueue();
     library = await database.loadLibrary();
     history = await database.loadHistory();
+    recentPlays = await database.loadPlayHistory();
     destination = await database.setting('destination');
     destinationLabel = await database.setting('destinationLabel');
     final savedTheme =
