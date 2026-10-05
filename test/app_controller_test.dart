@@ -91,8 +91,9 @@ class FakeDownloader extends DownloadService {
     Track track,
     String destination,
     DuplicateChoice duplicate,
-    void Function(double) onProgress,
-  ) async {
+    void Function(double) onProgress, {
+    void Function(TransferSample)? onSample,
+  }) async {
     choice = duplicate;
     downloadedTrack = track;
     if (duplicate == DuplicateChoice.skip) return null;
@@ -137,8 +138,9 @@ class FailingDownloader extends DownloadService {
     Track track,
     String destination,
     DuplicateChoice duplicate,
-    void Function(double) onProgress,
-  ) async => throw const DownloadFailure('yt-dlp reported HTTP 403');
+    void Function(double) onProgress, {
+    void Function(TransferSample)? onSample,
+  }) async => throw const DownloadFailure('yt-dlp reported HTTP 403');
 }
 
 void main() {

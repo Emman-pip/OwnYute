@@ -109,6 +109,27 @@ class SettingsPage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 24),
+          Text('Downloads', style: Theme.of(context).textTheme.titleLarge),
+          Text(
+            'Automatic adds songs as fast as your connection allows, and steps '
+            'back when it cannot keep up',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final choice in AppController.downloadConcurrencyChoices)
+                if (choice == null || choice <= AppController.platformDownloadLimit)
+                  ChoiceChip(
+                    label: Text(choice == null ? 'Automatic' : '$choice at a time'),
+                    selected: app.pinnedDownloadConcurrency == choice,
+                    onSelected: (_) => app.setDownloadConcurrency(choice),
+                  ),
+            ],
+          ),
+          const SizedBox(height: 24),
           Text('YouTube tools', style: Theme.of(context).textTheme.titleLarge),
           if (Platform.isAndroid)
             ListTile(

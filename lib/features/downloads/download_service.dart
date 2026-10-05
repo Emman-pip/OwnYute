@@ -18,6 +18,38 @@ class DownloadFailure implements Exception {
   String toString() => message;
 }
 
+/// One throughput reading from a running download, used to size a batch.
+class TransferSample {
+  const TransferSample({
+    required this.bytes,
+    required this.bytesPerSecond,
+    required this.elapsed,
+  });
+
+  /// Bytes transferred so far, as reported by yt-dlp.
+  final int bytes;
+  final double bytesPerSecond;
+  final Duration elapsed;
+}
+
+/// Holds the cancellation state and process handle of a single
+/// [DownloadService.download] call, so that parallel downloads never share them.
+class _DownloadRun {
+  final Stopwatch clock = Stopwatch()..start();
+  final Stopwatch sampleClock = Stopwatch()..start();
+  bool cancelled = false;
+  Process? process;
+  String? taskId;
+  int bytes = 0;
+
+  /// Caps how often a run reports throughput, since `--newline` is chatty.
+  bool shouldSample() {
+    if (sampleClock.elapsedMilliseconds < 250) return false;
+    sampleClock.reset();
+    return true;
+  }
+}
+
 class DownloadService {
   DownloadService({
     this.ytDlpExecutable = 'yt-dlp',
@@ -28,14 +60,58 @@ class DownloadService {
   final String ytDlpExecutable;
   final String ffmpegExecutable;
   final YtDlpManager? _tools;
-  Process? _active;
-  String? _activeTaskId;
-  bool _cancelled = false;
+
+  /// Live runs. Cancelling reaches every one of them, not just the newest.
+  final Set<_DownloadRun> _runs = {};
+
+  /// Stops every in-flight download. Each run owns its own flag and process, so
+  /// cancelling a parallel batch kills all of them instead of the last one.
   void cancel() {
-    _cancelled = true;
-    _active?.kill();
-    final taskId = _activeTaskId;
-    if (taskId != null) unawaited(AndroidTools.cancel(taskId));
+    for (final run in List<_DownloadRun>.from(_runs)) {
+      run.cancelled = true;
+      run.process?.kill();
+      final taskId = run.taskId;
+      if (taskId != null) unawaited(AndroidTools.cancel(taskId));
+    }
+  }
+
+  Future<T> _withRun<T>(Future<T> Function(_DownloadRun run) body) async {
+    final run = _DownloadRun();
+    _runs.add(run);
+    try {
+      return await body(run);
+    } finally {
+      _runs.remove(run);
+    }
+  }
+
+  /// Parses `of ~ 3.50MiB` from a `--newline` progress line into bytes.
+  static final _sizePattern = RegExp(
+    r'of\s+~?\s*([\d.]+)\s*(B|KiB|MiB|GiB|TiB)\b',
+    caseSensitive: false,
+  );
+
+  /// Parses `at 1.23MiB/s` from a `--newline` progress line into bytes/second.
+  static final _speedPattern = RegExp(
+    r'at\s+([\d.]+)\s*(B|KiB|MiB|GiB|TiB)/s',
+    caseSensitive: false,
+  );
+
+  static const _units = {
+    'B': 1,
+    'kib': 1024,
+    'mib': 1024 * 1024,
+    'gib': 1024 * 1024 * 1024,
+    'tib': 1024 * 1024 * 1024 * 1024,
+  };
+
+  static double _parse(RegExp pattern, String line) {
+    final match = pattern.firstMatch(line);
+    if (match == null) return 0;
+    final value = double.tryParse(match.group(1)!);
+    final unit = _units[match.group(2)!.toLowerCase()];
+    if (value == null || unit == null) return 0;
+    return value * unit;
   }
 
   String fileName(Track track) {
@@ -49,14 +125,28 @@ class DownloadService {
     Track track,
     String folder,
     DuplicateChoice duplicate,
-    void Function(double) onProgress,
-  ) async {
+    void Function(double) onProgress, {
+    void Function(TransferSample)? onSample,
+  }) async {
     if (!Platform.isLinux && !Platform.isAndroid) {
       throw const DownloadFailure(
         'Downloads are unavailable on this platform.',
       );
     }
-    _cancelled = false;
+    return _withRun(
+      (run) =>
+          _downloadTrack(track, folder, duplicate, onProgress, onSample, run),
+    );
+  }
+
+  Future<String?> _downloadTrack(
+    Track track,
+    String folder,
+    DuplicateChoice duplicate,
+    void Function(double) onProgress,
+    void Function(TransferSample)? onSample,
+    _DownloadRun run,
+  ) async {
     File? target;
     if (Platform.isLinux) {
       final destination = Directory(folder);
@@ -89,14 +179,32 @@ class DownloadService {
           p.join(scratch.path, 'source.%(ext)s'),
           track.url,
         ],
+        run,
         (line) {
           final match = RegExp(r'\[download\]\s+([\d.]+)%').firstMatch(line);
-          if (match != null) {
-            onProgress((double.parse(match.group(1)!) / 100) * 0.75);
-          }
+          if (match == null) return;
+          final fraction = double.parse(match.group(1)!) / 100;
+          onProgress(fraction * 0.75);
+          if (onSample == null || !run.shouldSample()) return;
+          final total = _parse(_sizePattern, line);
+          if (total > 0) run.bytes = (total * fraction).round();
+          if (run.bytes <= 0) return;
+          // Prefer yt-dlp's own reading, but fall back to bytes over elapsed so
+          // the signal survives platforms that omit the "at .../s" field.
+          final speed = _parse(_speedPattern, line);
+          final seconds = run.clock.elapsedMicroseconds / 1000000;
+          final bytesPerSecond = speed > 0 ? speed : run.bytes / seconds;
+          if (bytesPerSecond <= 0 || !bytesPerSecond.isFinite) return;
+          onSample(
+            TransferSample(
+              bytes: run.bytes,
+              bytesPerSecond: bytesPerSecond,
+              elapsed: run.clock.elapsed,
+            ),
+          );
         },
       );
-      if (_cancelled) throw const DownloadFailure('Download cancelled.');
+      if (run.cancelled) throw const DownloadFailure('Download cancelled.');
       final outputFiles = await scratch
           .list()
           .where((entity) => entity is File)
@@ -143,16 +251,22 @@ class DownloadService {
           }
         }
       }
-      if (_cancelled) throw const DownloadFailure('Download cancelled.');
+      if (run.cancelled) throw const DownloadFailure('Download cancelled.');
       try {
-        await _convertDownload(sources.first.path, temporaryMp3, track, cover);
+        await _convertDownload(
+          sources.first.path,
+          temporaryMp3,
+          track,
+          cover,
+          run,
+        );
       } on DownloadFailure {
-        if (cover == null || _cancelled) rethrow;
+        if (cover == null || run.cancelled) rethrow;
         final failed = File(temporaryMp3);
         if (await failed.exists()) await failed.delete();
-        await _convertDownload(sources.first.path, temporaryMp3, track, null);
+        await _convertDownload(sources.first.path, temporaryMp3, track, null, run);
       }
-      if (_cancelled) throw const DownloadFailure('Download cancelled.');
+      if (run.cancelled) throw const DownloadFailure('Download cancelled.');
       onProgress(0.95);
       if (Platform.isAndroid) {
         final saved = await AndroidStorage.save(
@@ -180,7 +294,6 @@ class DownloadService {
       return target.path;
     } finally {
       await scratch.delete(recursive: true);
-      _active = null;
     }
   }
 
@@ -189,6 +302,7 @@ class DownloadService {
     String output,
     Track track,
     File? cover,
+    _DownloadRun run,
   ) => _run(ffmpegExecutable, [
     '-hide_banner',
     '-loglevel',
@@ -217,7 +331,7 @@ class DownloadService {
     '-metadata',
     'album=${track.album}',
     output,
-  ]);
+  ], run);
 
   Future<void> editMetadata(LibraryTrack track) async {
     if (!Platform.isLinux && !Platform.isAndroid) {
@@ -225,6 +339,12 @@ class DownloadService {
         'Metadata editing is unavailable on this platform.',
       );
     }
+    // Editing owns a run too, so cancelling a batch also stops a metadata edit
+    // rather than orphaning a live ffmpeg process.
+    return _withRun((run) => _editMetadata(track, run));
+  }
+
+  Future<void> _editMetadata(LibraryTrack track, _DownloadRun run) async {
     final scratch = await Directory.systemTemp.createTemp('own_yute_cover_');
     final isDocument =
         Platform.isAndroid && track.path.startsWith('content://');
@@ -280,7 +400,7 @@ class DownloadService {
         '-metadata',
         'album=${track.album}',
         temporary,
-      ]);
+      ], run);
       final staged = File(temporary);
       if (!await staged.exists() || await staged.length() == 0) {
         throw const DownloadFailure(
@@ -300,7 +420,7 @@ class DownloadService {
         '-f',
         'null',
         '-',
-      ]);
+      ], run);
       if (isDocument) {
         await AndroidStorage.replace(track.path, temporary);
       } else {
@@ -369,12 +489,13 @@ class DownloadService {
 
   Future<void> _run(
     String executable,
-    List<String> args, [
+    List<String> args,
+    _DownloadRun run, [
     void Function(String)? onLine,
   ]) async {
     if (Platform.isAndroid) {
       final taskId = AndroidTools.newTaskId();
-      _activeTaskId = taskId;
+      run.taskId = taskId;
       try {
         final result = await AndroidTools.run(
           executable,
@@ -385,7 +506,7 @@ class DownloadService {
             if (line.isNotEmpty) onLine?.call(line);
           },
         );
-        if (_cancelled) throw const DownloadFailure('Download cancelled.');
+        if (run.cancelled) throw const DownloadFailure('Download cancelled.');
         if (result.exitCode != 0) {
           final message = (result.stderr as String).trim();
           throw DownloadFailure(
@@ -396,21 +517,22 @@ class DownloadService {
       } on ProcessException catch (failure) {
         throw DownloadFailure(failure.message);
       } finally {
-        _activeTaskId = null;
+        run.taskId = null;
       }
     }
+    late final Process process;
     try {
-      _active = await Process.start(executable, args);
+      process = run.process = await Process.start(executable, args);
     } on ProcessException {
       throw DownloadFailure('Install $executable and try again.');
     }
     final errors = StringBuffer();
-    final stdoutDone = _active!.stdout
+    final stdoutDone = process.stdout
         .transform(const SystemEncoding().decoder)
         .transform(const LineSplitter())
         .listen((line) => onLine?.call(line))
         .asFuture<void>();
-    final stderrDone = _active!.stderr
+    final stderrDone = process.stderr
         .transform(const SystemEncoding().decoder)
         .transform(const LineSplitter())
         .listen((line) {
@@ -418,9 +540,10 @@ class DownloadService {
           onLine?.call(line);
         })
         .asFuture<void>();
-    final code = await _active!.exitCode;
+    final code = await process.exitCode;
     await Future.wait([stdoutDone, stderrDone]);
-    if (_cancelled) throw const DownloadFailure('Download cancelled.');
+    run.process = null;
+    if (run.cancelled) throw const DownloadFailure('Download cancelled.');
     if (code != 0) {
       throw DownloadFailure(
         errors.toString().trim().isEmpty

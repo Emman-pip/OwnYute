@@ -59,7 +59,7 @@ Shared row UI lives in `lib/core/`:
 
 - Load and persist settings, queue, library, and history on startup.
 - Drive search, playlist parsing, preview resolution, and metadata edits.
-- Own the sequential download loop, including duplicate handling and batch bookkeeping.
+- Own the download batch loop, including duplicate handling and batch bookkeeping.
 - Manage playlist folders, physical folder scans, and file moves/deletes, including the bulk (`deleteSongs`) and folder (`deleteStorageFolder`) deletes that aggregate per-song failures into one error.
 - Expose helpers for the artwork picker and theme selection.
 
@@ -96,7 +96,10 @@ Shared row UI lives in `lib/core/`:
 
 ## Concurrency
 
-- The download queue runs **sequentially** through one `DownloadService` instance; `cancel()` kills the active process and notifies Android through the bridge.
+- The download queue runs a **parallel batch** through one `DownloadService` instance. `DownloadScheduler` (`download_scheduler.dart`) is pure arithmetic over injected readings: it widens when aggregate throughput really gains, gives a worker back when it does not, and collapses to one on HTTP 429. It is deliberately free of `dart:io` and Flutter so the AIMD behaviour is unit-tested directly. `AppController.platformDownloadLimit` caps the batch at 3 on Android and 8 on Linux, since every Android yt-dlp is a bundled Python interpreter. Settings can pin a fixed width, which overrides the readings.
+- Concurrency lives inside `DownloadService` as a per-call `_DownloadRun`, holding that call's own cancel flag, process handle, Android task id and clock. This is what makes the batch safe: a shared flag would have each starting download reset its siblings' cancellation. `cancel()` reaches every live run, so cancelling kills all of them rather than the newest.
+- `DownloadService.download` reports throughput through an optional `onSample`, parsed from yt-dlp's `--newline` output (`of ~3.50MiB`, `at 1.23MiB/s`), falling back to bytes-over-elapsed for platforms that omit the speed field. `download()`'s positional parameters are unchanged, so existing fakes still override it.
+- Two things a parallel batch had to add beyond starting more processes: duplicate prompts are chained through `_duplicatePromptLock` so dialogs never stack, and progress updates are throttled (`_reportProgress`) because N downloads ticking would otherwise rebuild the whole app N times per second. Progress ticks are kept in memory only, since `loadQueue` discards them on restore anyway.
 - On Android, `yt-dlp` is serialized on a single-thread executor so process IDs stay unique and cancellable; FFmpeg runs on a cached pool.
 - Long native work is always dispatched off the UI thread. This was a specific bug class addressed during development (see [Troubleshooting](troubleshooting.md)).
 

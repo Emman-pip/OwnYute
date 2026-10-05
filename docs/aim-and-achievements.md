@@ -21,7 +21,7 @@ The project targets four goals:
 | Paste song or playlist URL | ✅ | Watch URLs, radio mixes, and playlists; a track picker with **Select all**. |
 | Streaming preview | ✅ | Local and streamed previews with buffering feedback. |
 | Batch and single queueing | ✅ | Collapsible batches plus a **Singles** group; shared songs de-duplicate. |
-| Sequential downloads | ✅ | Progress, cancellation, and retry for failed/interrupted items. |
+| Parallel downloads | ✅ | Batch width adapts to measured throughput and steps back when the connection saturates. Progress, cancellation, rate-limit backoff, and retry for failed/interrupted items. |
 | MP3 transcoding | ✅ | Best available audio to VBR MP3 (`libmp3lame -qscale:a 0`). |
 | Metadata (title/artist/album) | ✅ | Written on download and editable afterward. |
 | Album/single cover art | ✅ | Source thumbnail fetched and embedded; user-selected cover takes priority; best-effort fallback. |

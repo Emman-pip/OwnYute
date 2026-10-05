@@ -12,6 +12,7 @@ import 'database_factory.dart';
 import 'android_storage.dart';
 import 'models.dart';
 import 'yt_dlp_manager.dart';
+import '../features/downloads/download_scheduler.dart';
 import '../features/downloads/download_service.dart';
 import '../features/search/youtube_service.dart';
 import '../features/player/player_controller.dart';
@@ -79,6 +80,9 @@ class AppController extends ChangeNotifier {
   AppThemeChoice themeChoice = AppThemeChoice.system;
   bool playerAnimationEnabled = true;
   bool automaticArtworkLookup = true;
+
+  /// `'auto'` adapts the batch width to measured throughput; a digit pins it.
+  String downloadConcurrency = 'auto';
   bool artworkLookupRunning = false;
   int artworkLookupUpdated = 0;
   int artworkLookupFailed = 0;
@@ -86,12 +90,47 @@ class AppController extends ChangeNotifier {
   int deletingTotal = 0;
   int deletingRemaining = 0;
   int _batchSequence = 0;
+
+  /// Serialises duplicate prompts so a parallel batch never stacks dialogs.
+  Future<void> _duplicatePromptLock = Future<void>.value();
+
+  /// Last progress reported per track, so a parallel batch does not rebuild the
+  /// whole app on every `--newline` line.
+  final Map<String, (double, DateTime)> _progressMarks = {};
   Widget? folderOverlay;
 
   /// Progress of a running bulk delete, for the selection bar's progress line.
   double? get deleteProgress => deletingTotal == 0
       ? null
       : (deletingTotal - deletingRemaining) / deletingTotal;
+
+  /// Widest batch the platform can take. Android is held lower because every
+  /// yt-dlp there is a bundled Python interpreter.
+  static int get platformDownloadLimit => Platform.isAndroid ? 3 : 8;
+
+  /// Fixed width from Settings, or null when the batch should adapt itself.
+  int? get pinnedDownloadConcurrency {
+    final value = int.tryParse(downloadConcurrency);
+    if (value == null) return null;
+    return value.clamp(1, platformDownloadLimit);
+  }
+
+  /// Options offered in Settings. `null` renders as Automatic.
+  static const List<int?> downloadConcurrencyChoices = [
+    null,
+    1,
+    2,
+    3,
+    4,
+    6,
+    8,
+  ];
+
+  Future<void> setDownloadConcurrency(int? value) async {
+    downloadConcurrency = value?.toString() ?? 'auto';
+    await database.saveSetting('downloadConcurrency', downloadConcurrency);
+    notifyListeners();
+  }
 
   /// The physical folder a library entry belongs to, falling back to its
   /// parent directory when the entry predates folder bookkeeping.
@@ -157,6 +196,8 @@ class AppController extends ChangeNotifier {
         (await database.setting('playerAnimationEnabled')) != 'false';
     automaticArtworkLookup =
         (await database.setting('automaticArtworkLookup')) != 'false';
+    downloadConcurrency =
+        await database.setting('downloadConcurrency') ?? 'auto';
     importedFolders =
         (await database.setting('folders'))
             ?.split('\n')
@@ -756,89 +797,173 @@ class AppController extends ChangeNotifier {
     downloading = true;
     cancelled = false;
     error = null;
+    _progressMarks.clear();
+    final scheduler = DownloadScheduler(
+      maxConcurrency: platformDownloadLimit,
+      pinned: pinnedDownloadConcurrency,
+    );
+    final pending = List<QueueItem>.from(
+      queue.where((item) => item.status != 'done'),
+    );
+    var nextIndex = 0;
+    // Each in-flight worker publishes its own completer, so the coordinator can
+    // wait for whichever finishes next rather than for all of them.
+    final inFlight = <({QueueItem item, Completer<void> done})>[];
     notifyListeners();
     try {
-      for (final item in List<QueueItem>.from(queue)) {
+      while (true) {
         if (cancelled) break;
-        if (item.status == 'done') continue;
-        final downloadTrack = await _artworkForDownload(item.track);
-        final fileName = downloader.fileName(downloadTrack);
-        final path = Platform.isAndroid
-            ? '${await AndroidStorage.folderName(folder)}/$fileName'
-            : p.join(folder, fileName);
-        var choice = DuplicateChoice.replace;
-        final exists = Platform.isAndroid
-            ? await AndroidStorage.exists(folder, fileName)
-            : await File(path).exists();
-        if (exists) choice = await onDuplicate(path);
-        if (exists && choice == DuplicateChoice.skip) {
-          await _updateItem(item.track.id, status: 'done', progress: 1);
-          continue;
-        }
-        await _updateItem(
-          item.track.id,
-          status: 'downloading',
-          error: '',
-          progress: 0,
-        );
-        try {
-          final saved = await downloader.download(
-            downloadTrack,
-            folder,
-            choice,
-            (progress) {
-              _updateItem(item.track.id, progress: progress);
-            },
-          );
-          if (saved != null) {
-            final membership = queue.firstWhere(
-              (entry) => entry.track.id == item.track.id,
-              orElse: () => item,
-            );
-            final libraryTrack = LibraryTrack(
-              path: saved,
-              title: downloadTrack.title,
-              artist: downloadTrack.artist,
-              album: downloadTrack.album,
-              artwork: downloadTrack.artwork,
-              duration: await _resolveSavedDuration(
-                saved,
-                downloadTrack.duration,
-              ),
-              folder: folder,
-              folderName: Platform.isAndroid
-                  ? await AndroidStorage.folderName(folder)
-                  : p.basename(folder),
-              sourceTrackId: item.track.id,
-              playlists: {
-                for (final batch in membership.batches)
-                  if (batch.playlist != null)
-                    batch.playlist!.id: batch.playlist!,
-                for (final playlist in membership.targetPlaylists)
-                  playlist.id: playlist,
-              }.values.toList(),
-            );
-            await database.saveLibrary(libraryTrack);
-            library = [
-              ...library.where((entry) => entry.path != saved),
-              libraryTrack,
-            ];
-          }
-          await _updateItem(item.track.id, status: 'done', progress: 1);
-        } catch (failure) {
-          await _updateItem(
-            item.track.id,
-            status: 'failed',
-            error: failure.toString(),
+        while (!cancelled &&
+            nextIndex < pending.length &&
+            inFlight.length < scheduler.target) {
+          inFlight.add(
+            _startDownload(
+              folder,
+              onDuplicate,
+              pending[nextIndex++],
+              scheduler,
+            ),
           );
         }
+        if (inFlight.isEmpty) break;
+        await Future.any(inFlight.map((worker) => worker.done.future));
+        inFlight.removeWhere((worker) => worker.done.isCompleted);
+        scheduler.closeWindow();
       }
     } catch (failure) {
       error = 'Could not prepare download: $failure';
     } finally {
+      // A failure in one worker must not tear down its siblings.
+      if (inFlight.isNotEmpty) {
+        await Future.wait(inFlight.map((worker) => worker.done.future));
+      }
       downloading = false;
       notifyListeners();
     }
+  }
+
+  /// Starts one download and resolves when it has settled, either way.
+  ({QueueItem item, Completer<void> done}) _startDownload(
+    String folder,
+    Future<DuplicateChoice> Function(String) onDuplicate,
+    QueueItem item,
+    DownloadScheduler scheduler,
+  ) {
+    final done = Completer<void>();
+    final started = _runDownload(folder, onDuplicate, item, scheduler);
+    unawaited(
+      started.then(
+        (_) => done.complete(),
+        onError: (Object failure) {
+          error = 'Could not prepare download: $failure';
+          done.complete();
+        },
+      ),
+    );
+    return (item: item, done: done);
+  }
+
+  Future<void> _runDownload(
+    String folder,
+    Future<DuplicateChoice> Function(String) onDuplicate,
+    QueueItem item,
+    DownloadScheduler scheduler,
+  ) async {
+    if (cancelled) return;
+    final downloadTrack = await _artworkForDownload(item.track);
+    final name = downloader.fileName(downloadTrack);
+    final path = Platform.isAndroid
+        ? '${await AndroidStorage.folderName(folder)}/$name'
+        : p.join(folder, name);
+    final exists = Platform.isAndroid
+        ? await AndroidStorage.exists(folder, name)
+        : await File(path).exists();
+    var choice = DuplicateChoice.replace;
+    // Prompting is serialised, so a parallel batch shows one dialog at a time.
+    if (exists) choice = await _askDuplicate(onDuplicate, path);
+    if (exists && choice == DuplicateChoice.skip) {
+      await _updateItem(item.track.id, status: 'done', progress: 1);
+      return;
+    }
+    await _updateItem(
+      item.track.id,
+      status: 'downloading',
+      error: '',
+      progress: 0,
+    );
+    scheduler.beginWindow();
+    try {
+      final saved = await downloader.download(
+        downloadTrack,
+        folder,
+        choice,
+        (progress) => _reportProgress(item.track.id, progress),
+        onSample: (sample) =>
+            scheduler.recordSample(item.track.id, sample.bytesPerSecond),
+      );
+      if (cancelled) return;
+      if (saved != null) {
+        final membership = queue.firstWhere(
+          (entry) => entry.track.id == item.track.id,
+          orElse: () => item,
+        );
+        final libraryTrack = LibraryTrack(
+          path: saved,
+          title: downloadTrack.title,
+          artist: downloadTrack.artist,
+          album: downloadTrack.album,
+          artwork: downloadTrack.artwork,
+          duration: await _resolveSavedDuration(saved, downloadTrack.duration),
+          folder: folder,
+          folderName: Platform.isAndroid
+              ? await AndroidStorage.folderName(folder)
+              : p.basename(folder),
+          sourceTrackId: item.track.id,
+          playlists: {
+            for (final batch in membership.batches)
+              if (batch.playlist != null) batch.playlist!.id: batch.playlist!,
+            for (final playlist in membership.targetPlaylists)
+              playlist.id: playlist,
+          }.values.toList(),
+        );
+        await database.saveLibrary(libraryTrack);
+        library = [
+          ...library.where((entry) => entry.path != saved),
+          libraryTrack,
+        ];
+      }
+      await _updateItem(item.track.id, status: 'done', progress: 1);
+    } catch (failure) {
+      final message = failure.toString();
+      // One throttled item means the whole batch is being throttled.
+      if (DownloadScheduler.isRateLimit(message)) {
+        scheduler.recordRateLimit();
+        error =
+            'YouTube rate-limited these downloads. Continuing one at a time.';
+        notifyListeners();
+      }
+      await _updateItem(
+        item.track.id,
+        status: 'failed',
+        error: message,
+      );
+    } finally {
+      scheduler.recordFinished(item.track.id);
+      _progressMarks.remove(item.track.id);
+    }
+  }
+
+  /// Chains a duplicate prompt behind any prompt already on screen.
+  Future<DuplicateChoice> _askDuplicate(
+    Future<DuplicateChoice> Function(String) onDuplicate,
+    String path,
+  ) {
+    final answer = _duplicatePromptLock.then((_) => onDuplicate(path));
+    _duplicatePromptLock = answer.then<void>(
+      (_) {},
+      onError: (Object _) {},
+    );
+    return answer;
   }
 
   /// YouTube search results carry no duration, so read the saved file to keep
@@ -868,6 +993,7 @@ class AppController extends ChangeNotifier {
     String? status,
     String? error,
     double? progress,
+    bool persist = true,
   }) async {
     final index = queue.indexWhere((item) => item.track.id == id);
     if (index < 0) return;
@@ -876,8 +1002,26 @@ class AppController extends ChangeNotifier {
       error: error,
       progress: progress,
     );
-    await database.saveQueue(queue[index]);
+    if (persist) await database.saveQueue(queue[index]);
     notifyListeners();
+  }
+
+  /// Progress moves many times a second per track, and a parallel batch
+  /// multiplies that. Only rebuild when the bar would visibly change, and keep
+  /// the ticks in memory — `loadQueue` discards progress on restore anyway.
+  void _reportProgress(String id, double progress) {
+    final now = DateTime.now();
+    final mark = _progressMarks[id];
+    if (mark != null) {
+      final elapsed = now.difference(mark.$2);
+      if ((progress - mark.$1).abs() < 0.01 && elapsed.inMilliseconds < 1000) {
+        return;
+      }
+    }
+    _progressMarks[id] = (progress, now);
+    unawaited(
+      _updateItem(id, progress: progress, persist: false).catchError((_) {}),
+    );
   }
 
   void cancelDownloads() {

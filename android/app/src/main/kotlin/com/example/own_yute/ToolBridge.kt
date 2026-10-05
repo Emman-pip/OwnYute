@@ -21,13 +21,24 @@ class ToolBridge(private val context: Context, messenger: BinaryMessenger) {
     private val channel = MethodChannel(messenger, "own_yute/tools")
     private val main = Handler(Looper.getMainLooper())
     private val workers = Executors.newCachedThreadPool()
-    private val ytDlpWorker = Executors.newSingleThreadExecutor()
+    // Downloads run in parallel, so yt-dlp needs more than one lane. Fixed
+    // rather than cached: every yt-dlp here is a bundled Python interpreter,
+    // and an unbounded pool would let a bug spawn them until the device dies.
+    private val ytDlpPool = Executors.newFixedThreadPool(YT_DLP_LANES)
+    // Nightly updates stay on their own lane so they never interleave with, or
+    // queue behind, the downloads the user is waiting on.
+    private val updateWorker = Executors.newSingleThreadExecutor()
     private val ffmpegProcesses = ConcurrentHashMap<String, Process>()
+
+    companion object {
+        /** Matches the widest automatic batch on Android. */
+        private const val YT_DLP_LANES = 3
+    }
 
     init {
         channel.setMethodCallHandler { call, result ->
             when (call.method) {
-                "ytDlp", "ffmpeg" -> (if (call.method == "ytDlp") ytDlpWorker else workers).execute {
+                "ytDlp", "ffmpeg" -> (if (call.method == "ytDlp") ytDlpPool else workers).execute {
                     try {
                         val id = call.argument<String>("id") ?: error("Missing task ID")
                         val args = call.argument<List<String>>("args") ?: error("Missing arguments")
@@ -43,7 +54,7 @@ class ToolBridge(private val context: Context, messenger: BinaryMessenger) {
                         main.post { result.error("tool_failed", failure.message ?: failure.toString(), null) }
                     }
                 }
-                "updateNightly" -> ytDlpWorker.execute {
+                "updateNightly" -> updateWorker.execute {
                     try {
                         val version = updateNightly()
                         main.post { result.success(version) }
@@ -255,7 +266,8 @@ class ToolBridge(private val context: Context, messenger: BinaryMessenger) {
         ffmpegProcesses.values.forEach { it.destroyForcibly() }
         ffmpegProcesses.clear()
         workers.shutdownNow()
-        ytDlpWorker.shutdownNow()
+        ytDlpPool.shutdownNow()
+        updateWorker.shutdownNow()
         channel.setMethodCallHandler(null)
     }
 }

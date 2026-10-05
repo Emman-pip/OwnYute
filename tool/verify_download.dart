@@ -156,8 +156,77 @@ printf '[download] 100.0%%\n'
       editedTags['title'] == 'Edited',
       'Metadata edit did not update the MP3',
     );
+    await checkParallel(stub.path);
     stdout.writeln('Download checks passed.');
   } finally {
     await scratch.delete(recursive: true);
+  }
+}
+
+/// Downloads several songs at once through the real service, with only yt-dlp
+/// stubbed, and confirms each one lands as a valid MP3. The stub writes into
+/// the per-download scratch directory, so concurrent invocations cannot collide.
+Future<void> checkParallel(String stub) async {
+  final destination = await Directory.systemTemp.createTemp(
+    'own_yute_parallel_',
+  );
+  try {
+    final downloader = DownloadService(ytDlpExecutable: stub);
+    final batch = List.generate(
+      4,
+      (index) => Track(
+        id: 'parallel-$index',
+        url: 'https://youtu.be/parallel-$index',
+        title: 'Parallel $index',
+        artist: 'Test Artist',
+        album: 'Test Album',
+      ),
+    );
+    // Each download runs on its own scratch directory, so a failure here is a
+    // real concurrency bug rather than a fixture collision.
+    final saved = await Future.wait(
+      batch.map(
+        (track) => downloader.download(
+          track,
+          destination.path,
+          DuplicateChoice.replace,
+          (_) {},
+        ),
+      ),
+    );
+    check(saved.every((path) => path != null), 'A parallel song was skipped');
+    final files = await destination
+        .list()
+        .where((entity) => entity is File && entity.path.endsWith('.mp3'))
+        .cast<File>()
+        .toList();
+    check(
+      files.length == batch.length,
+      'Parallel downloads produced ${files.length} of ${batch.length} MP3s',
+    );
+    for (var index = 0; index < files.length; index++) {
+      final probe = await Process.run('ffprobe', [
+        '-v',
+        'error',
+        '-show_entries',
+        'format_tags=title,artist',
+        '-of',
+        'json',
+        files[index].path,
+      ]);
+      check(probe.exitCode == 0, 'A parallel MP3 could not be probed');
+      final format =
+          (jsonDecode(probe.stdout as String)
+                  as Map<String, dynamic>)['format']
+              as Map<String, dynamic>;
+      final tags = format['tags'] as Map<String, dynamic>;
+      check(
+        tags['artist'] == 'Test Artist' && tags['title'] != null,
+        'A parallel MP3 is missing metadata',
+      );
+    }
+    stdout.writeln('  ${files.length} songs downloaded in parallel.');
+  } finally {
+    await destination.delete(recursive: true);
   }
 }

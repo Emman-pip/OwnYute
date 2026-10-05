@@ -131,7 +131,8 @@ Also note: creating several `AppDatabase.forTesting(NativeDatabase.memory())` in
 ## Conventions
 
 - Keep download and metadata behavior in the services under `lib/features/`, not in widgets. Handle `yt-dlp` process failures and user-visible download errors explicitly — typed `DownloadFailure` / `YoutubeFailure` exceptions surface through `AppController.error`.
-- Downloads run **sequentially** through one `DownloadService`. Cover art embedding is best-effort and must never block saving the audio.
+- A batch downloads songs **in parallel** through one `DownloadService`. Concurrency is safe because each `download()` call owns a `_DownloadRun` with its own cancel flag, process handle and Android task id — never reintroduce a shared flag, because a second starting download would reset its siblings' cancellation. Cover art embedding is best-effort and must never block saving the audio.
+- Batch width comes from `DownloadScheduler` (pure, injectable clock, unit-tested on its own). Two invariants a parallel batch needs: duplicate prompts are chained through `_duplicatePromptLock` so dialogs cannot stack, and progress goes through the throttled `_reportProgress`, which does not persist (see `loadQueue`).
 - Test names describe observable behavior, not methods. New behavior should come with a test that fails without the change.
 - Keep `readme.md` in sync when user-facing behavior or setup changes; technical detail goes in `docs/`.
 

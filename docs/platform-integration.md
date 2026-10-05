@@ -21,7 +21,8 @@ Each channel has a Dart wrapper in `lib/core/` (`android_tools.dart`, `android_s
 
 ### `ToolBridge` (`ToolBridge.kt`)
 
-- Serializes all `yt-dlp` executions onto a **single-thread executor** so process IDs remain unique and cancellable; FFmpeg runs on a cached pool.
+- Runs `yt-dlp` on a **fixed pool** (`YT_DLP_LANES`, currently 3) so a batch can download in parallel; FFmpeg runs on a cached pool. Each Dart call still supplies its own process id, so ids stay unique and cancellable. The pool is fixed rather than cached on purpose — every `yt-dlp` here is a bundled Python interpreter, and an unbounded pool would let a bug spawn them until the device runs out of memory. Keep `YT_DLP_LANES` in step with `AppController.platformDownloadLimit`, which caps Android at 3 for the same reason.
+- `updateNightly()` has its **own single-thread executor**, so a nightly check never interleaves with, or queues behind, the downloads the user is waiting on.
 - Calls `YoutubeDL.getInstance().init(context)` and executes `YoutubeDLRequest`s with argv arrays.
 - Streams download progress back through `progress` method calls.
 - `updateNightly()` downloads, validates, and installs a nightly build with layered recovery.
