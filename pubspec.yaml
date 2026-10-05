@@ -1,7 +1,7 @@
 name: own_yute
 description: Search, download, and organize music on Linux and Android.
 publish_to: none
-version: 1.0.1+2
+version: 1.0.2+3
 environment:
   sdk: ^3.13.3
 dependencies:

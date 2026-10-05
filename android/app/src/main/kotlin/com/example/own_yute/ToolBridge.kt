@@ -45,7 +45,8 @@ class ToolBridge(private val context: Context, messenger: BinaryMessenger) {
                 }
                 "updateNightly" -> ytDlpWorker.execute {
                     try {
-                        main.post { result.success(updateNightly()) }
+                        val version = updateNightly()
+                        main.post { result.success(version) }
                     } catch (failure: Throwable) {
                         if (failure is VirtualMachineError || failure is ThreadDeath) throw failure
                         CrashDiagnostics.failure(context, "nightly update failed", failure)
