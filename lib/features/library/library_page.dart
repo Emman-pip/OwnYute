@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/android_storage.dart';
 import '../../core/app_controller.dart';
+import '../../core/artwork_image.dart';
 import '../../core/models.dart';
 import '../../core/ui_helpers.dart';
 
@@ -19,6 +20,8 @@ class _LibraryPageState extends State<LibraryPage> {
   AppController get app => widget.app;
   String query = '';
   final searchController = TextEditingController();
+  final selectedPaths = <String>{};
+  bool selecting = false;
 
   @override
   void dispose() {
@@ -71,7 +74,7 @@ class _LibraryPageState extends State<LibraryPage> {
     }
   }
 
-  Future<void> _assign(BuildContext context, LibraryTrack track) async {
+  Future<PlaylistRef?> _choosePlaylist(BuildContext context) async {
     final folders = app.playlistFolders;
     final choice = await showDialog<PlaylistRef?>(
       context: context,
@@ -93,7 +96,7 @@ class _LibraryPageState extends State<LibraryPage> {
         ],
       ),
     );
-    if (choice == null || !context.mounted) return;
+    if (choice == null || !context.mounted) return null;
     var playlist = choice;
     if (choice.id == 'new') {
       final name = (await textDialog(
@@ -101,13 +104,54 @@ class _LibraryPageState extends State<LibraryPage> {
         'New playlist folder',
         'Folder name',
       ))?.trim();
-      if (name == null || name.isEmpty) return;
+      if (name == null || name.isEmpty) return null;
       playlist = PlaylistRef(
         id: 'local:${DateTime.now().microsecondsSinceEpoch}',
         title: name,
       );
     }
-    await app.assignToPlaylist(track, playlist);
+    return playlist;
+  }
+
+  Future<void> _assign(BuildContext context, LibraryTrack track) async {
+    final playlist = await _choosePlaylist(context);
+    if (playlist != null) await app.assignToPlaylist(track, playlist);
+  }
+
+  Future<void> _assignSelected(BuildContext context) async {
+    final selected = app.library
+        .where((track) => selectedPaths.contains(track.path))
+        .toList();
+    if (selected.isEmpty) return;
+    final playlist = await _choosePlaylist(context);
+    if (playlist == null) return;
+    try {
+      await app.assignManyToPlaylist(selected, playlist);
+      if (!context.mounted) return;
+      setState(() {
+        selecting = false;
+        selectedPaths.clear();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Added ${selected.length} ${selected.length == 1 ? 'song' : 'songs'} to ${playlist.title}.',
+          ),
+        ),
+      );
+    } catch (failure) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(failure.toString())));
+      }
+    }
+  }
+
+  void _toggleSelection(LibraryTrack track) {
+    setState(() {
+      selecting = true;
+      if (!selectedPaths.add(track.path)) selectedPaths.remove(track.path);
+    });
   }
 
   Future<void> _action(
@@ -149,6 +193,7 @@ class _LibraryPageState extends State<LibraryPage> {
             album: track.album,
             artwork: track.artwork,
           ),
+          pickArtwork: app.pickArtwork,
         );
         if (edited == null) return;
         await app.editLibrary(
@@ -180,22 +225,52 @@ class _LibraryPageState extends State<LibraryPage> {
   Widget _track(
     BuildContext context,
     LibraryTrack track,
-    List<LibraryTrack> group,
-  ) => ListTile(
-    leading: const Icon(Icons.audio_file),
-    title: Text(track.title),
-    subtitle: Text(track.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
-    onTap: () => app.player.playLocal(group, group.indexOf(track)),
-    trailing: PopupMenuButton<String>(
-      onSelected: (action) => _action(context, track, action),
-      itemBuilder: (context) => const [
-        PopupMenuItem(value: 'playlist', child: Text('Add to playlist folder')),
-        PopupMenuItem(value: 'edit', child: Text('Edit metadata')),
-        PopupMenuItem(value: 'move', child: Text('Move file')),
-        PopupMenuItem(value: 'delete', child: Text('Delete song')),
-      ],
-    ),
-  );
+    List<LibraryTrack> group, {
+    bool allowSelection = false,
+  }) {
+    final selected = selectedPaths.contains(track.path);
+    return ListTile(
+      leading: allowSelection && selecting
+          ? Checkbox(value: selected, onChanged: (_) => _toggleSelection(track))
+          : ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: ArtworkImage(
+                source: track.artwork,
+                width: 48,
+                height: 48,
+                fallback: const SizedBox.square(
+                  dimension: 48,
+                  child: Icon(Icons.audio_file),
+                ),
+              ),
+            ),
+      title: Text(track.title),
+      subtitle: Text(
+        track.artist,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      selected: allowSelection && selected,
+      onTap: allowSelection && selecting
+          ? () => _toggleSelection(track)
+          : () => app.player.playLocal(group, group.indexOf(track)),
+      onLongPress: allowSelection ? () => _toggleSelection(track) : null,
+      trailing: allowSelection && selecting
+          ? null
+          : PopupMenuButton<String>(
+              onSelected: (action) => _action(context, track, action),
+              itemBuilder: (context) => const [
+                PopupMenuItem(
+                  value: 'playlist',
+                  child: Text('Add to playlist folder'),
+                ),
+                PopupMenuItem(value: 'edit', child: Text('Edit metadata')),
+                PopupMenuItem(value: 'move', child: Text('Move file')),
+                PopupMenuItem(value: 'delete', child: Text('Delete song')),
+              ],
+            ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -213,6 +288,7 @@ class _LibraryPageState extends State<LibraryPage> {
                     ),
               )
               .toList();
+    selectedPaths.retainAll(app.library.map((track) => track.path).toSet());
     final physical = <String, List<LibraryTrack>>{};
     final visibleFolders = app.playlistFolders
         .where(
@@ -251,27 +327,6 @@ class _LibraryPageState extends State<LibraryPage> {
           ),
           onChanged: (value) => setState(() => query = value),
         ),
-        const SizedBox(height: 12),
-        Card(
-          child: ListTile(
-            leading: const Icon(Icons.create_new_folder_outlined),
-            title: const Text('Import folder'),
-            subtitle: const Text(
-              'Browse and keep a music folder in the library',
-            ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: app.importFolder,
-          ),
-        ),
-        Card(
-          child: ListTile(
-            leading: const Icon(Icons.audio_file_outlined),
-            title: const Text('Import audio files'),
-            subtitle: const Text('Copy selected audio files into the app'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: app.importFiles,
-          ),
-        ),
         if (app.library.isEmpty)
           const ListTile(
             title: Text('Downloaded and imported music appears here.'),
@@ -279,14 +334,72 @@ class _LibraryPageState extends State<LibraryPage> {
         if (app.library.isNotEmpty && visible.isEmpty)
           const ListTile(title: Text('No songs match your search.')),
         if (visible.isNotEmpty) ...[
-          const SectionTitle('All songs'),
-          Card(
-            child: ExpansionTile(
-              initiallyExpanded: true,
-              leading: const Icon(Icons.library_music),
-              title: Text('${visible.length} songs'),
+          Padding(
+            padding: const EdgeInsets.only(top: 20, bottom: 8),
+            child: Row(
               children: [
-                for (final track in visible) _track(context, track, visible),
+                Expanded(
+                  child: Text(
+                    'All songs',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: () => setState(() {
+                    selecting = !selecting;
+                    if (!selecting) selectedPaths.clear();
+                  }),
+                  icon: Icon(selecting ? Icons.close : Icons.checklist),
+                  label: Text(selecting ? 'Cancel' : 'Select'),
+                ),
+              ],
+            ),
+          ),
+          if (selecting)
+            Card(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              child: ListTile(
+                title: Text('${selectedPaths.length} selected'),
+                subtitle: TextButton(
+                  style: TextButton.styleFrom(
+                    alignment: Alignment.centerLeft,
+                    padding: EdgeInsets.zero,
+                  ),
+                  onPressed: () => setState(() {
+                    final visiblePaths = visible
+                        .map((track) => track.path)
+                        .toSet();
+                    if (visiblePaths.every(selectedPaths.contains)) {
+                      selectedPaths.removeAll(visiblePaths);
+                    } else {
+                      selectedPaths.addAll(visiblePaths);
+                    }
+                  }),
+                  child: Text(
+                    visible.every((track) => selectedPaths.contains(track.path))
+                        ? 'Clear visible songs'
+                        : 'Select all visible songs',
+                  ),
+                ),
+                trailing: IconButton.filled(
+                  tooltip: 'Add selected songs to playlist',
+                  onPressed: selectedPaths.isEmpty
+                      ? null
+                      : () => _assignSelected(context),
+                  icon: const Icon(Icons.playlist_add),
+                ),
+              ),
+            ),
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.library_music),
+                  title: Text('${visible.length} songs'),
+                ),
+                const Divider(height: 1),
+                for (final track in visible)
+                  _track(context, track, visible, allowSelection: true),
               ],
             ),
           ),
@@ -341,6 +454,27 @@ class _LibraryPageState extends State<LibraryPage> {
               ),
             ),
         ],
+        const SectionTitle('Add music'),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.create_new_folder_outlined),
+            title: const Text('Import folder'),
+            subtitle: const Text(
+              'Browse and keep a music folder in the library',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: app.importFolder,
+          ),
+        ),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.audio_file_outlined),
+            title: const Text('Import audio files'),
+            subtitle: const Text('Copy selected audio files into the app'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: app.importFiles,
+          ),
+        ),
       ],
     );
   }

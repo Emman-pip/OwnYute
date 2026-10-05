@@ -137,7 +137,11 @@ class _QueuePageState extends State<QueuePage> {
         track: item.track,
         fullTitle: true,
         onTap: () async {
-          final edited = await editTrackDialog(context, item.track);
+          final edited = await editTrackDialog(
+            context,
+            item.track,
+            pickArtwork: widget.app.pickArtwork,
+          );
           if (edited != null) await widget.app.editQueue(edited);
         },
         trailing: PopupMenuButton<String>(

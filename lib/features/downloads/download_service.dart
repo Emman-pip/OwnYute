@@ -268,13 +268,24 @@ class DownloadService {
     }
   }
 
-  Future<File?> _artworkFile(String url, Directory scratch) async {
-    if (url.trim().isEmpty) return null;
-    final uri = Uri.tryParse(url.trim());
-    if (uri == null || !{'https', 'http'}.contains(uri.scheme)) {
+  Future<File?> _artworkFile(String source, Directory scratch) async {
+    final value = source.trim();
+    if (value.isEmpty) return null;
+    final uri = Uri.tryParse(value);
+    if (uri == null || (!{'https', 'http', 'file', ''}.contains(uri.scheme))) {
       throw const DownloadFailure(
-        'Artwork must be an HTTP or HTTPS image URL.',
+        'Artwork must be a selected image or an HTTP/HTTPS image URL.',
       );
+    }
+    if (uri.scheme != 'http' && uri.scheme != 'https') {
+      final file = File(uri.scheme == 'file' ? uri.toFilePath() : value);
+      if (!await file.exists()) {
+        throw const DownloadFailure('The selected artwork no longer exists.');
+      }
+      if (await file.length() > 10 * 1024 * 1024) {
+        throw const DownloadFailure('Artwork exceeds the 10 MB limit.');
+      }
+      return file;
     }
     final client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 15);

@@ -25,6 +25,21 @@ Future<void> main() async {
       fixture.path,
     ]);
     check(generated.exitCode == 0, 'Could not generate audio fixture');
+    final cover = File('${scratch.path}/cover.jpg');
+    final generatedCover = await Process.run('ffmpeg', [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-f',
+      'lavfi',
+      '-i',
+      'color=c=0x6656d8:s=64x64',
+      '-frames:v',
+      '1',
+      '-y',
+      cover.path,
+    ]);
+    check(generatedCover.exitCode == 0, 'Could not generate artwork fixture');
     final stub = File('${scratch.path}/fake-yt-dlp');
     await stub.writeAsString(r'''#!/bin/sh
 previous=''
@@ -40,12 +55,13 @@ printf '[download] 100.0%%\n'
     check(executable.exitCode == 0, 'Could not prepare yt-dlp fixture');
     final destination = Directory('${scratch.path}/music');
     final downloader = DownloadService(ytDlpExecutable: stub.path);
-    const song = Track(
+    final song = Track(
       id: 'fixture',
       url: 'https://youtu.be/fixture',
       title: 'Sample',
       artist: 'Test Artist',
       album: 'Test Album',
+      artwork: cover.path,
     );
     final first = await downloader.download(
       song,
@@ -58,7 +74,7 @@ printf '[download] 100.0%%\n'
       '-v',
       'error',
       '-show_entries',
-      'format_tags=title,artist,album:stream=codec_name',
+      'format_tags=title,artist,album:stream=codec_name:stream_disposition=attached_pic',
       '-of',
       'json',
       first!,
@@ -73,6 +89,17 @@ printf '[download] 100.0%%\n'
           tags['artist'] == 'Test Artist' &&
           tags['album'] == 'Test Album',
       'MP3 metadata was not written',
+    );
+    final streams = details['streams'] as List<dynamic>;
+    check(
+      streams.any(
+        (stream) =>
+            (stream as Map<String, dynamic>)['codec_name'] == 'mjpeg' &&
+            ((stream['disposition']
+                    as Map<String, dynamic>?)?['attached_pic'] ==
+                1),
+      ),
+      'Local cover artwork was not embedded',
     );
     final indexed = await LibraryService().readTrack(File(first));
     check(

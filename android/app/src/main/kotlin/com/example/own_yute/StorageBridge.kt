@@ -49,8 +49,14 @@ class StorageBridge(private val activity: Activity, messenger: BinaryMessenger) 
                         "list" -> list(uri(call, "folder"))
                         "metadata" -> metadata(string(call, "path"))
                         "readToCache" -> readToCache(string(call, "path"))
-                        "replace" -> replace(string(call, "path"), string(call, "source"))
-                        "delete" -> delete(string(call, "path"))
+                        "replace" -> {
+                            replace(string(call, "path"), string(call, "source"))
+                            null
+                        }
+                        "delete" -> {
+                            delete(string(call, "path"))
+                            null
+                        }
                         "move" -> move(call)
                         "pathExists" -> pathExists(string(call, "path"))
                         else -> null

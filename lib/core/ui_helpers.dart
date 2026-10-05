@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'app_controller.dart';
+import 'artwork_image.dart';
 import 'models.dart';
 
 class SectionTitle extends StatelessWidget {
@@ -27,18 +28,18 @@ class TrackTile extends StatelessWidget {
   final bool fullTitle;
   @override
   Widget build(BuildContext context) => ListTile(
-    leading: track.artwork.isEmpty
-        ? const Icon(Icons.music_note)
-        : ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: Image.network(
-              track.artwork,
-              width: 48,
-              height: 48,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => const Icon(Icons.music_note),
-            ),
-          ),
+    leading: ClipRRect(
+      borderRadius: BorderRadius.circular(4),
+      child: ArtworkImage(
+        source: track.artwork,
+        width: 48,
+        height: 48,
+        fallback: const SizedBox.square(
+          dimension: 48,
+          child: Icon(Icons.music_note),
+        ),
+      ),
+    ),
     title: Text(
       track.title,
       maxLines: fullTitle ? null : 1,
@@ -249,16 +250,22 @@ class _TextEntryDialogState extends State<_TextEntryDialog> {
   );
 }
 
-Future<Track?> editTrackDialog(BuildContext context, Track track) async {
+Future<Track?> editTrackDialog(
+  BuildContext context,
+  Track track, {
+  Future<String?> Function()? pickArtwork,
+}) async {
   return showDialog<Track>(
     context: context,
-    builder: (context) => _EditTrackDialog(track: track),
+    builder: (context) =>
+        _EditTrackDialog(track: track, pickArtwork: pickArtwork),
   );
 }
 
 class _EditTrackDialog extends StatefulWidget {
-  const _EditTrackDialog({required this.track});
+  const _EditTrackDialog({required this.track, this.pickArtwork});
   final Track track;
+  final Future<String?> Function()? pickArtwork;
   @override
   State<_EditTrackDialog> createState() => _EditTrackDialogState();
 }
@@ -268,6 +275,26 @@ class _EditTrackDialogState extends State<_EditTrackDialog> {
   late final artist = TextEditingController(text: widget.track.artist);
   late final album = TextEditingController(text: widget.track.album);
   late final artwork = TextEditingController(text: widget.track.artwork);
+  bool pickingArtwork = false;
+  String? artworkError;
+
+  Future<void> _pickArtwork() async {
+    final picker = widget.pickArtwork;
+    if (picker == null || pickingArtwork) return;
+    setState(() {
+      pickingArtwork = true;
+      artworkError = null;
+    });
+    try {
+      final selected = await picker();
+      if (selected != null && mounted) artwork.text = selected;
+    } catch (failure) {
+      if (mounted) setState(() => artworkError = failure.toString());
+    } finally {
+      if (mounted) setState(() => pickingArtwork = false);
+    }
+  }
+
   @override
   void dispose() {
     title.dispose();
@@ -301,7 +328,50 @@ class _EditTrackDialogState extends State<_EditTrackDialog> {
             ),
             TextField(
               controller: artwork,
-              decoration: const InputDecoration(labelText: 'Artwork URL'),
+              decoration: InputDecoration(
+                labelText: 'Artwork URL or image',
+                errorText: artworkError,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: artwork,
+              builder: (context, value, _) => Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: ArtworkImage(
+                      source: value.text,
+                      width: 64,
+                      height: 64,
+                      fallback: ColoredBox(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest,
+                        child: const SizedBox.square(
+                          dimension: 64,
+                          child: Icon(Icons.image_outlined),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: widget.pickArtwork == null || pickingArtwork
+                          ? null
+                          : _pickArtwork,
+                      icon: pickingArtwork
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.add_photo_alternate_outlined),
+                      label: const Text('Choose image'),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),

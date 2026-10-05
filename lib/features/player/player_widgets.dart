@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/app_controller.dart';
+import '../../core/artwork_image.dart';
 import '../../core/models.dart';
 
 class MiniPlayer extends StatelessWidget {
@@ -288,19 +289,13 @@ class _Artwork extends StatelessWidget {
     borderRadius: BorderRadius.circular(12),
     child: SizedBox.square(
       dimension: size,
-      child: track.artwork.isEmpty
-          ? ColoredBox(
-              color: Theme.of(context).colorScheme.primaryContainer,
-              child: Icon(Icons.music_note, size: size * 0.45),
-            )
-          : Image.network(
-              track.artwork,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => ColoredBox(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                child: Icon(Icons.music_note, size: size * 0.45),
-              ),
-            ),
+      child: ArtworkImage(
+        source: track.artwork,
+        fallback: ColoredBox(
+          color: Theme.of(context).colorScheme.primaryContainer,
+          child: Icon(Icons.music_note, size: size * 0.45),
+        ),
+      ),
     ),
   );
 }

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
@@ -142,6 +143,41 @@ class AppController extends ChangeNotifier {
     playerAnimationEnabled = value;
     await database.saveSetting('playerAnimationEnabled', value.toString());
     notifyListeners();
+  }
+
+  Future<String?> pickArtwork() async {
+    final result = await FilePicker.pickFiles(
+      dialogTitle: 'Choose cover artwork',
+      type: FileType.image,
+      allowMultiple: false,
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return null;
+    final selected = result.files.single;
+    final bytes =
+        selected.bytes ??
+        (selected.path == null
+            ? null
+            : await File(selected.path!).readAsBytes());
+    if (bytes == null || bytes.isEmpty) {
+      throw const FileSystemException('Could not read the selected image.');
+    }
+    if (bytes.length > 10 * 1024 * 1024) {
+      throw const FileSystemException('Artwork exceeds the 10 MB limit.');
+    }
+    final extension = p.extension(selected.name).toLowerCase();
+    if (!{'.jpg', '.jpeg', '.png', '.webp'}.contains(extension)) {
+      throw const FileSystemException('Choose a JPG, PNG, or WebP image.');
+    }
+    final directory = Directory(
+      p.join((await getApplicationSupportDirectory()).path, 'artwork'),
+    );
+    await directory.create(recursive: true);
+    final file = File(
+      p.join(directory.path, '${sha256.convert(bytes)}$extension'),
+    );
+    if (!await file.exists()) await file.writeAsBytes(bytes, flush: true);
+    return file.path;
   }
 
   Future<void> refreshLibrary() async {
@@ -642,18 +678,28 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> assignToPlaylist(
-    LibraryTrack track,
+  Future<void> assignToPlaylist(LibraryTrack track, PlaylistRef playlist) =>
+      assignManyToPlaylist([track], playlist);
+
+  Future<void> assignManyToPlaylist(
+    Iterable<LibraryTrack> tracks,
     PlaylistRef playlist,
   ) async {
-    final updated = track.copyWith(
-      playlists: [
-        ...track.playlists.where((item) => item.id != playlist.id),
-        playlist,
-      ],
-    );
-    await database.saveLibrary(updated);
-    library = [...library.where((item) => item.path != track.path), updated];
+    final updated = <String, LibraryTrack>{};
+    await database.transaction(() async {
+      for (final track in tracks) {
+        final item = track.copyWith(
+          playlists: [
+            ...track.playlists.where((item) => item.id != playlist.id),
+            playlist,
+          ],
+        );
+        await database.saveLibrary(item);
+        updated[item.path] = item;
+      }
+    });
+    if (updated.isEmpty) return;
+    library = [for (final item in library) updated[item.path] ?? item];
     notifyListeners();
   }
 
