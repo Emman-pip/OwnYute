@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=OwnYute
+Comment=Search, download, and organize music
+Exec=own_yute
+Icon=com.example.own_yute
+Terminal=false
+Categories=AudioVideo;Audio;Music;
+StartupNotify=true
+StartupWMClass=com.example.own_yute

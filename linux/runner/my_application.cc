@@ -14,6 +14,24 @@ struct _MyApplication {
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
+// Loads the bundled icon so the running window has OwnYute branding even when
+// its desktop file has not been installed into the system icon theme.
+static void set_window_icon(GtkWindow* window) {
+  gtk_window_set_default_icon_name(APPLICATION_ID);
+
+  g_autofree gchar* executable = g_file_read_link("/proc/self/exe", nullptr);
+  if (executable == nullptr) {
+    return;
+  }
+  g_autofree gchar* executable_directory = g_path_get_dirname(executable);
+  g_autofree gchar* icon_path =
+      g_build_filename(executable_directory, "data", "ownyute_logo.png", nullptr);
+  g_autoptr(GError) error = nullptr;
+  if (!gtk_window_set_icon_from_file(window, icon_path, &error)) {
+    g_warning("Failed to load OwnYute window icon: %s", error->message);
+  }
+}
+
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
@@ -24,6 +42,7 @@ static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
+  set_window_icon(window);
 
   // Use a header bar when running in GNOME as this is the common style used
   // by applications and is the setup most users will be using (e.g. Ubuntu
@@ -45,11 +64,11 @@ static void my_application_activate(GApplication* application) {
   if (use_header_bar) {
     GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
     gtk_widget_show(GTK_WIDGET(header_bar));
-    gtk_header_bar_set_title(header_bar, "own_yute");
+    gtk_header_bar_set_title(header_bar, "OwnYute");
     gtk_header_bar_set_show_close_button(header_bar, TRUE);
     gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
   } else {
-    gtk_window_set_title(window, "own_yute");
+    gtk_window_set_title(window, "OwnYute");
   }
 
   gtk_window_set_default_size(window, 1280, 720);

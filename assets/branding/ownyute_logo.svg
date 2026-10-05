@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title description">
+  <title id="title">OwnYute app logo</title>
+  <description id="description">A cheerful yellow emoji hugs a nervous red video player on a rounded purple background.</description>
+  <defs>
+    <linearGradient id="background" x1="154" y1="94" x2="872" y2="930" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8B7CFF"/>
+      <stop offset="0.48" stop-color="#6656D8"/>
+      <stop offset="1" stop-color="#39258F"/>
+    </linearGradient>
+    <radialGradient id="backgroundGlow" cx="0" cy="0" r="1" gradientTransform="translate(268 230) rotate(48) scale(734)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B9B0FF" stop-opacity="0.50"/>
+      <stop offset="0.58" stop-color="#7363E5" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#2D1D78" stop-opacity="0.32"/>
+    </radialGradient>
+    <linearGradient id="emoji" x1="208" y1="278" x2="484" y2="696" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF27A"/>
+      <stop offset="0.55" stop-color="#FFD94D"/>
+      <stop offset="1" stop-color="#F6B926"/>
+    </linearGradient>
+    <linearGradient id="video" x1="452" y1="323" x2="807" y2="686" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF6278"/>
+      <stop offset="0.48" stop-color="#ED3656"/>
+      <stop offset="1" stop-color="#C91E47"/>
+    </linearGradient>
+    <linearGradient id="arm" x1="286" y1="332" x2="782" y2="678" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFE96B"/>
+      <stop offset="1" stop-color="#F7C438"/>
+    </linearGradient>
+    <filter id="panelShadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="30" stdDeviation="30" flood-color="#21165B" flood-opacity="0.34"/>
+    </filter>
+    <filter id="characterShadow" x="-25%" y="-25%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#21165B" flood-opacity="0.32"/>
+    </filter>
+  </defs>
+
+  <!-- Rounded background keeps the legacy icon polished while adaptive launchers can mask it. -->
+  <g id="icon-background" filter="url(#panelShadow)">
+    <rect x="42" y="42" width="940" height="940" rx="224" fill="url(#background)"/>
+    <rect x="42" y="42" width="940" height="940" rx="224" fill="url(#backgroundGlow)"/>
+    <path d="M142 260C243 125 382 96 515 102" fill="none" stroke="#FFFFFF" stroke-opacity="0.13" stroke-width="24" stroke-linecap="round"/>
+    <circle cx="839" cy="205" r="22" fill="#FFFFFF" fill-opacity="0.23"/>
+    <circle cx="891" cy="262" r="11" fill="#FFFFFF" fill-opacity="0.20"/>
+  </g>
+
+  <g filter="url(#characterShadow)">
+    <!-- Emoji friend. -->
+    <circle cx="354" cy="485" r="226" fill="url(#emoji)" stroke="#352567" stroke-width="24"/>
+    <ellipse cx="274" cy="555" rx="54" ry="28" fill="#F18B75" fill-opacity="0.47"/>
+    <path d="M205 432C224 407 258 407 279 431" fill="none" stroke="#352567" stroke-width="25" stroke-linecap="round"/>
+    <path d="M323 421C344 398 379 402 397 429" fill="none" stroke="#352567" stroke-width="25" stroke-linecap="round"/>
+    <path d="M222 493C249 548 314 570 365 529" fill="none" stroke="#352567" stroke-width="28" stroke-linecap="round"/>
+    <path d="M254 525C279 540 307 542 330 532" fill="none" stroke="#FFF8E1" stroke-width="13" stroke-linecap="round"/>
+    <path d="M192 334C235 287 289 266 343 262" fill="none" stroke="#FFFFFF" stroke-opacity="0.40" stroke-width="23" stroke-linecap="round"/>
+
+    <!-- Nervous video character. It is intentionally generic rather than a copied brand mark. -->
+    <g transform="rotate(4 632 500)">
+      <rect x="404" y="307" width="458" height="382" rx="108" fill="url(#video)" stroke="#352567" stroke-width="24"/>
+      <path d="M457 387C496 337 554 325 623 326" fill="none" stroke="#FFFFFF" stroke-opacity="0.24" stroke-width="20" stroke-linecap="round"/>
+      <path d="M502 417C517 401 540 403 553 421" fill="none" stroke="#352567" stroke-width="20" stroke-linecap="round"/>
+      <path d="M714 431C730 413 754 416 767 435" fill="none" stroke="#352567" stroke-width="20" stroke-linecap="round"/>
+      <path d="M588 450L588 564L691 507L588 450Z" fill="#FFFFFF" stroke="#FFF7FA" stroke-width="10" stroke-linejoin="round"/>
+      <path d="M591 614C613 595 631 633 651 613C670 594 691 629 711 610" fill="none" stroke="#352567" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M775 458L785 466" stroke="#FFFFFF" stroke-opacity="0.52" stroke-width="13" stroke-linecap="round"/>
+      <path d="M789 439L802 439" stroke="#FFFFFF" stroke-opacity="0.52" stroke-width="13" stroke-linecap="round"/>
+      <path d="M793 482L804 490" stroke="#FFFFFF" stroke-opacity="0.52" stroke-width="13" stroke-linecap="round"/>
+    </g>
+
+    <!-- Upper and lower arms overlap the video tile to make the hug readable. -->
+    <path d="M314 330C394 271 500 284 574 345" fill="none" stroke="#352567" stroke-width="108" stroke-linecap="round"/>
+    <path d="M314 330C394 271 500 284 574 345" fill="none" stroke="url(#arm)" stroke-width="78" stroke-linecap="round"/>
+    <ellipse cx="578" cy="348" rx="62" ry="50" transform="rotate(27 578 348)" fill="#FFD94D" stroke="#352567" stroke-width="22"/>
+    <path d="M553 327L590 361" stroke="#FFF49A" stroke-width="12" stroke-linecap="round" opacity="0.7"/>
+
+    <path d="M294 616C397 724 612 759 788 625" fill="none" stroke="#352567" stroke-width="116" stroke-linecap="round"/>
+    <path d="M294 616C397 724 612 759 788 625" fill="none" stroke="url(#arm)" stroke-width="84" stroke-linecap="round"/>
+    <ellipse cx="788" cy="622" rx="63" ry="52" transform="rotate(-35 788 622)" fill="#F7C438" stroke="#352567" stroke-width="22"/>
+    <path d="M765 637L810 604" stroke="#FFF19A" stroke-width="12" stroke-linecap="round" opacity="0.68"/>
+  </g>
+
+  <!-- Small music accent reinforces that OwnYute handles songs. -->
+  <g transform="translate(167 714) rotate(-10)" fill="#FFFFFF" opacity="0.92">
+    <circle cx="0" cy="86" r="31"/>
+    <circle cx="105" cy="57" r="31"/>
+    <path d="M23 1V87H-1V14L128-21V58H104V-3L23 18V1Z"/>
+  </g>
+</svg>

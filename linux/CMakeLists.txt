@@ -100,6 +100,27 @@ install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}
 install(FILES "${FLUTTER_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
+# Include the application icon for the GTK window and Linux desktop launchers.
+set(OWN_YUTE_ICON "${CMAKE_SOURCE_DIR}/../assets/branding/ownyute_logo.svg")
+install(FILES "${OWN_YUTE_ICON}"
+  DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
+  RENAME "ownyute_logo.svg"
+  COMPONENT Runtime)
+install(FILES "${CMAKE_SOURCE_DIR}/runner/resources/ownyute_logo.png"
+  DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
+  COMPONENT Runtime)
+install(FILES "${CMAKE_SOURCE_DIR}/com.example.own_yute.desktop"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}/share/applications"
+  COMPONENT Runtime)
+install(FILES "${OWN_YUTE_ICON}"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}/share/icons/hicolor/scalable/apps"
+  RENAME "com.example.own_yute.svg"
+  COMPONENT Runtime)
+install(FILES "${CMAKE_SOURCE_DIR}/runner/resources/ownyute_logo.png"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}/share/icons/hicolor/512x512/apps"
+  RENAME "com.example.own_yute.png"
+  COMPONENT Runtime)
+
 foreach(bundled_library ${PLUGIN_BUNDLED_LIBRARIES})
   install(FILES "${bundled_library}"
     DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
