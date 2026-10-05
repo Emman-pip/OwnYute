@@ -17,14 +17,19 @@ class EditPlaybackSnapshot {
   final bool wasPlaying;
 }
 
+/// Reads a local file's length in seconds. Injected so tests can avoid FFmpeg.
+typedef LocalDurationProbe = Future<int> Function(String path);
+
 class PlayerController extends ChangeNotifier {
   PlayerController(
     this.youtube, {
     bool? android,
     MethodChannel? channel,
     this.onTrackStarted,
+    LocalDurationProbe? probeLocalDuration,
   }) : _isAndroid = android ?? Platform.isAndroid,
-       _android = channel ?? const MethodChannel('own_yute/player') {
+       _android = channel ?? const MethodChannel('own_yute/player'),
+       _probeLocalDuration = probeLocalDuration ?? _ffprobeDuration {
     if (_isAndroid) {
       _android.setMethodCallHandler(
         (call) => handlePlatformEvent(call.method, call.arguments),
@@ -33,6 +38,7 @@ class PlayerController extends ChangeNotifier {
   }
   final YoutubeService youtube;
   final ValueChanged<Track>? onTrackStarted;
+  final LocalDurationProbe _probeLocalDuration;
   final bool _isAndroid;
   final MethodChannel _android;
   final List<Track> queue = [];
@@ -100,24 +106,124 @@ class PlayerController extends ChangeNotifier {
     _source = null;
     await _start();
     unawaited(_saveSnapshot());
+    unawaited(_fillLocalDuration(current!));
+  }
+
+  /// Downloaded songs inherit `duration: 0` from flat YouTube search data, so
+  /// probe the file to keep the scrubber usable without a platform event.
+  Future<void> _fillLocalDuration(Track track) async {
+    if (track.url.startsWith('http') || track.duration > 0) return;
+    final seconds = await _probeLocalDuration(track.url);
+    if (seconds <= 0 || current?.url != track.url) return;
+    final updated = track.copyWith(duration: seconds);
+    final index = queue.indexWhere((item) => item.url == track.url);
+    if (index >= 0) queue[index] = updated;
+    current = updated;
+    duration = Duration(seconds: seconds);
+    notifyListeners();
+    unawaited(_saveSnapshot());
+  }
+
+  static Future<int> _ffprobeDuration(String path) async {
+    try {
+      final result = await Process.run('ffprobe', [
+        '-v',
+        'error',
+        '-show_entries',
+        'format=duration',
+        '-of',
+        'json',
+        path,
+      ]);
+      if (result.exitCode != 0) return 0;
+      final json = jsonDecode(result.stdout as String) as Map<String, dynamic>;
+      final format = json['format'] as Map<String, dynamic>?;
+      return (double.tryParse(format?['duration']?.toString() ?? '') ?? 0)
+          .round();
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<void> playAt(int index) async {
+    if (queue.isEmpty) return;
+    current = queue[index.clamp(0, queue.length - 1)];
+    position = Duration.zero;
+    duration = Duration(seconds: current!.duration);
+    _source = null;
+    await _start();
+    unawaited(_saveSnapshot());
+    unawaited(_fillLocalDuration(current!));
+  }
+
+  void addToQueue(Track track) {
+    queue.add(track);
+    if (current == null) {
+      current = track;
+      position = Duration.zero;
+      duration = Duration(seconds: track.duration);
+      _source = null;
+    }
+    notifyListeners();
+    unawaited(_saveSnapshot());
+  }
+
+  void addAllToQueue(Iterable<Track> tracks) {
+    final additions = tracks.toList();
+    if (additions.isEmpty) return;
+    queue.addAll(additions);
+    if (current == null) {
+      current = additions.first;
+      position = Duration.zero;
+      duration = Duration(seconds: current!.duration);
+      _source = null;
+    }
+    notifyListeners();
+    unawaited(_saveSnapshot());
+  }
+
+  void addLibraryToQueue(LibraryTrack track) => addToQueue(_fromLibrary(track));
+
+  Future<void> removeAt(int index) async {
+    if (index < 0 || index >= queue.length) return;
+    final removingCurrent = current != null && index == queue.indexOf(current!);
+    final wasActive = playing || preparing;
+    if (removingCurrent) await _stopProcess();
+    queue.removeAt(index);
+    if (removingCurrent) {
+      current = queue.isEmpty ? null : queue[index.clamp(0, queue.length - 1)];
+      position = Duration.zero;
+      duration = Duration(seconds: current?.duration ?? 0);
+      _source = null;
+      if (wasActive && current != null) await _start();
+    }
+    notifyListeners();
+    unawaited(_saveSnapshot());
+  }
+
+  void reorder(int oldIndex, int newIndex) {
+    if (oldIndex < 0 || oldIndex >= queue.length) return;
+    final bounded = newIndex.clamp(0, queue.length - 1);
+    final track = queue.removeAt(oldIndex);
+    queue.insert(bounded, track);
+    notifyListeners();
+    unawaited(_saveSnapshot());
   }
 
   Future<void> playLocal(List<LibraryTrack> tracks, int index) async {
-    final converted = tracks
-        .map(
-          (t) => Track(
-            id: t.path,
-            url: t.path,
-            title: t.title,
-            artist: t.artist,
-            album: t.album,
-            artwork: t.artwork,
-            duration: t.duration,
-          ),
-        )
-        .toList();
+    final converted = tracks.map(_fromLibrary).toList();
     await playTracks(converted, index);
   }
+
+  static Track _fromLibrary(LibraryTrack track) => Track(
+    id: track.path,
+    url: track.path,
+    title: track.title,
+    artist: track.artist,
+    album: track.album,
+    artwork: track.artwork,
+    duration: track.duration,
+  );
 
   Future<EditPlaybackSnapshot?> suspendForEdit(String path) async {
     if (current?.url != path) return null;
@@ -241,9 +347,12 @@ class PlayerController extends ChangeNotifier {
 
   Future<void> _saveSnapshot() async {
     final track = current;
-    if (track == null) return;
     try {
       final file = await _snapshotFile();
+      if (track == null) {
+        if (await file.exists()) await file.delete();
+        return;
+      }
       await file.writeAsString(
         jsonEncode({
           'queue': queue.map((item) => item.toJson()).toList(),
@@ -276,14 +385,17 @@ class PlayerController extends ChangeNotifier {
       if (!await file.exists()) return;
       final data =
           jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-      final restored = (data['queue'] as List?)
+      final restored =
+          (data['queue'] as List?)
               ?.whereType<Map>()
               .map((item) => Track.fromJson(Map<String, dynamic>.from(item)))
               .toList() ??
           const <Track>[];
       if (restored.isEmpty) return;
-      final index =
-          ((data['index'] as num?)?.toInt() ?? 0).clamp(0, restored.length - 1);
+      final index = ((data['index'] as num?)?.toInt() ?? 0).clamp(
+        0,
+        restored.length - 1,
+      );
       queue
         ..clear()
         ..addAll(restored);
@@ -324,9 +436,7 @@ class PlayerController extends ChangeNotifier {
           if (liveTitle != null &&
               liveTitle != current!.title &&
               savedSource != null) {
-            final match = queue.indexWhere(
-              (track) => track.title == liveTitle,
-            );
+            final match = queue.indexWhere((track) => track.title == liveTitle);
             if (match >= 0) current = queue[match];
           }
         }
@@ -357,6 +467,7 @@ class PlayerController extends ChangeNotifier {
         _androidServiceStarted = false;
       }
       notifyListeners();
+      unawaited(_fillLocalDuration(current!));
     } catch (_) {}
   }
 

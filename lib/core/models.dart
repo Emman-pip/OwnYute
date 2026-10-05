@@ -26,6 +26,7 @@ class Track {
     String? artist,
     String? album,
     String? artwork,
+    int? duration,
     String? streamUrl,
   }) => Track(
     id: id,
@@ -34,7 +35,7 @@ class Track {
     artist: artist ?? this.artist,
     album: album ?? this.album,
     artwork: artwork ?? this.artwork,
-    duration: duration,
+    duration: duration ?? this.duration,
     streamUrl: streamUrl ?? this.streamUrl,
   );
 

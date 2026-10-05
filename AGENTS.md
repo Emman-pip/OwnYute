@@ -1,31 +1,31 @@
-# Repository Guidelines
+# OwnYute contributor guide
 
-## Project Structure & Module Organization
+## Layout and architecture
 
-OwnYute is a multiplatform Linux and Android application that wraps `yt-dlp` for searching and downloading YouTube playlists and songs, with batch or individual metadata options. Keep Flutter application code in `lib/`, automated checks in `test/`, and bundled resources in `assets/`. Group related screens, services, and models by feature; keep download and metadata behavior out of presentation widgets where practical. Update `readme.md` when setup or user-facing behavior changes.
+- Flutter code lives in `lib/`, tests in `test/`, bundled files in `assets/`, and offline verification programs in `tool/`.
+- `AppController` owns search, the Drift-backed **download queue**, library/settings persistence, downloads, and background artwork work.
+- `PlayerController` owns the separate **playback queue**, platform playback, and `playback_snapshot.json`. Do not merge the two queue concepts.
+- Keep `yt-dlp`, FFmpeg, storage, and metadata work in services/controllers rather than widgets. Android playback uses `MethodChannel('own_yute/player')`; Linux playback uses `ffplay`.
+- Settings use Drift's existing key/value table. Regenerate Drift code only when the schema changes.
 
-## Build, Test, and Development Commands
+## Commands
 
-Run commands from the repository root:
+Run from the repository root:
 
-- `flutter pub get` resolves Dart and Flutter dependencies.
-- `flutter analyze` reports static analysis issues.
-- `flutter test` runs the test suite.
-- `flutter run -d linux` launches the Linux app; use `flutter devices` to find an Android device or emulator, then pass its device ID to `flutter run -d <device-id>`.
-- `flutter build apk` creates an Android APK; `flutter build linux` builds the Linux app when the required platform tooling is installed.
+```sh
+flutter pub get
+dart format lib test
+flutter analyze
+flutter test
+flutter test tool/verify_download_test.dart  # requires FFmpeg/FFprobe
+flutter run -d linux                         # Linux also requires ffplay
+flutter build apk
+```
 
-## Coding Style & Naming Conventions
+## Conventions and behavior
 
-Use Dart’s standard formatting: two spaces for indentation and trailing commas for multiline argument lists. Format changed Dart files with `dart format`. Use `UpperCamelCase` for types, `lowerCamelCase` for members and variables, and `snake_case.dart` for filenames. Prefer small, focused widgets and services, and handle `yt-dlp` process failures and user-visible download errors explicitly.
-
-## Testing Guidelines
-
-Use Flutter’s `flutter_test` framework. Name test files `*_test.dart` and organize cases around observable behavior, including search results, metadata choices, and download error handling. Run `flutter test` and `flutter analyze` before submitting changes; add or update tests when behavior changes.
-
-## Commit & Pull Request Guidelines
-
-No commit history is available in this checkout to establish a project-specific convention. Write concise, imperative commit subjects, for example `Handle yt-dlp download failures`. Pull requests should explain the user-visible change, note platform impact and verification performed, link relevant issues, and include screenshots for UI changes.
-
-## Security & Configuration
-
-Do not commit credentials, personal download paths, or machine-specific configuration. Keep `yt-dlp` invocation arguments safely separated rather than assembling shell commands from user input, and document any new platform setup requirements.
+- Follow standard Dart style: two-space indentation, trailing commas, `UpperCamelCase` types, `lowerCamelCase` members, and `snake_case.dart` files.
+- Pass process arguments as lists; never interpolate user input into shell commands. Report download failures visibly and leave failed items retryable.
+- Playback-queue append/remove/reorder changes must persist via the player snapshot and safely preserve or replace the current track.
+- Artwork lookup is optional, enabled by default, sequential, and best-effort. Conservative matches may update display data and embed artwork with FFmpeg, but lookup or embedding failures must never block playback or downloads.
+- Update `readme.md` for user-visible changes and add tests for queue state, settings persistence, metadata updates, and failure handling.

@@ -5,8 +5,9 @@ import '../../core/artwork_image.dart';
 import '../../core/models.dart';
 
 class MiniPlayer extends StatelessWidget {
-  const MiniPlayer({super.key, required this.app});
+  const MiniPlayer({super.key, required this.app, this.onDownloads});
   final AppController app;
+  final VoidCallback? onDownloads;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -16,6 +17,7 @@ class MiniPlayer extends StatelessWidget {
       final track = player.current;
       if (track == null) return const SizedBox.shrink();
       final scheme = Theme.of(context).colorScheme;
+      final busy = player.preparing || player.buffering;
       final progress = player.duration.inMilliseconds > 0
           ? (player.position.inMilliseconds / player.duration.inMilliseconds)
                 .clamp(0.0, 1.0)
@@ -31,7 +33,7 @@ class MiniPlayer extends StatelessWidget {
               context: context,
               isScrollControlled: true,
               useSafeArea: true,
-              builder: (_) => PlayerSheet(app: app),
+              builder: (_) => PlayerSheet(app: app, onDownloads: onDownloads),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -66,6 +68,21 @@ class MiniPlayer extends StatelessWidget {
                         ],
                       ),
                     ),
+                    if (app.isStreamedPreview(track))
+                      IconButton(
+                        tooltip: app.isInDownloadQueue(track)
+                            ? 'View in Downloads'
+                            : 'Save offline',
+                        icon: Icon(
+                          app.isInDownloadQueue(track)
+                              ? Icons.download_done
+                              : Icons.download_for_offline_outlined,
+                        ),
+                        onPressed: () async {
+                          await app.saveOffline(track);
+                          onDownloads?.call();
+                        },
+                      ),
                     IconButton(
                       tooltip: player.playing || player.preparing
                           ? 'Pause'
@@ -84,13 +101,17 @@ class MiniPlayer extends StatelessWidget {
                         context: context,
                         isScrollControlled: true,
                         useSafeArea: true,
-                        builder: (_) => PlayerSheet(app: app),
+                        builder: (_) =>
+                            PlayerSheet(app: app, onDownloads: onDownloads),
                       ),
                     ),
                   ],
                 ),
-                if (progress != null)
-                  LinearProgressIndicator(value: progress, minHeight: 2),
+                LinearProgressIndicator(
+                  value: busy ? null : (progress ?? 0),
+                  minHeight: 3,
+                  backgroundColor: scheme.onSurface.withValues(alpha: 0.18),
+                ),
               ],
             ),
           ),
@@ -101,8 +122,9 @@ class MiniPlayer extends StatelessWidget {
 }
 
 class PlayerSheet extends StatefulWidget {
-  const PlayerSheet({super.key, required this.app});
+  const PlayerSheet({super.key, required this.app, this.onDownloads});
   final AppController app;
+  final VoidCallback? onDownloads;
 
   @override
   State<PlayerSheet> createState() => _PlayerSheetState();
@@ -125,7 +147,7 @@ class _PlayerSheetState extends State<PlayerSheet> {
         if (track == null) return const SizedBox.shrink();
         final max = player.duration.inMilliseconds.toDouble();
         final position = player.position.inMilliseconds
-            .clamp(0, max.toInt())
+            .clamp(0, max > 0 ? max.toInt() : 1 << 31)
             .toDouble();
         return ListView(
           controller: scrollController,
@@ -142,6 +164,15 @@ class _PlayerSheetState extends State<PlayerSheet> {
               ),
             ),
             const SizedBox(height: 24),
+            Text(
+              'NOW PLAYING',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: Theme.of(context).colorScheme.primary,
+                letterSpacing: 1.6,
+              ),
+            ),
+            const SizedBox(height: 12),
             Center(
               child: _AnimatedArtwork(
                 track: track,
@@ -165,6 +196,29 @@ class _PlayerSheetState extends State<PlayerSheet> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
+            if (widget.app.isStreamedPreview(track)) ...[
+              const SizedBox(height: 12),
+              Center(
+                child: FilledButton.tonalIcon(
+                  onPressed: () async {
+                    await widget.app.saveOffline(track);
+                    if (!context.mounted) return;
+                    Navigator.pop(context);
+                    widget.onDownloads?.call();
+                  },
+                  icon: Icon(
+                    widget.app.isInDownloadQueue(track)
+                        ? Icons.download_done
+                        : Icons.download_for_offline_outlined,
+                  ),
+                  label: Text(
+                    widget.app.isInDownloadQueue(track)
+                        ? 'View in Downloads'
+                        : 'Save offline',
+                  ),
+                ),
+              ),
+            ],
             if (player.error != null) Text(player.error!),
             if (player.preparing || player.buffering) ...[
               const LinearProgressIndicator(),
@@ -176,30 +230,34 @@ class _PlayerSheetState extends State<PlayerSheet> {
               ),
             ],
             const SizedBox(height: 16),
-            if (max > 0) ...[
-              Slider(
-                value: (draggedPosition ?? position).clamp(0.0, max),
-                max: max,
-                onChanged: (value) => setState(() => draggedPosition = value),
-                onChangeEnd: (value) {
-                  setState(() => draggedPosition = null);
-                  player.seek(Duration(milliseconds: value.toInt()));
-                },
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    _time(
-                      Duration(
-                        milliseconds: (draggedPosition ?? position).toInt(),
-                      ),
+            Slider(
+              value: max > 0
+                  ? (draggedPosition ?? position).clamp(0.0, max)
+                  : 0,
+              max: max > 0 ? max : 1,
+              onChanged: max > 0
+                  ? (value) => setState(() => draggedPosition = value)
+                  : null,
+              onChangeEnd: max > 0
+                  ? (value) {
+                      setState(() => draggedPosition = null);
+                      player.seek(Duration(milliseconds: value.toInt()));
+                    }
+                  : null,
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  _time(
+                    Duration(
+                      milliseconds: (draggedPosition ?? position).toInt(),
                     ),
                   ),
-                  Text(_time(player.duration)),
-                ],
-              ),
-            ],
+                ),
+                Text(max > 0 ? _time(player.duration) : '--:--'),
+              ],
+            ),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -248,24 +306,58 @@ class _PlayerSheetState extends State<PlayerSheet> {
               ],
             ),
             const SizedBox(height: 16),
-            Text('Up next', style: Theme.of(context).textTheme.titleLarge),
-            ...player.queue.asMap().entries.map(
-              (entry) => ListTile(
-                dense: true,
-                selected: entry.value == track,
-                title: Text(
-                  entry.value.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+            Row(
+              children: [
+                Text(
+                  'Playback queue',
+                  style: Theme.of(context).textTheme.titleLarge,
                 ),
-                subtitle: Text(
-                  entry.value.artist,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                onTap: () =>
-                    player.playTracks(player.queue.toList(), entry.key),
-              ),
+                const Spacer(),
+                Text('${player.queue.length} tracks'),
+              ],
+            ),
+            const SizedBox(height: 4),
+            ReorderableListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              buildDefaultDragHandles: false,
+              itemCount: player.queue.length,
+              onReorderItem: player.reorder,
+              itemBuilder: (context, index) {
+                final queued = player.queue[index];
+                return ListTile(
+                  key: ObjectKey(queued),
+                  dense: true,
+                  selected: identical(queued, track),
+                  selectedTileColor: Theme.of(context)
+                      .colorScheme
+                      .primaryContainer
+                      .withValues(alpha: 0.45),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  leading: ReorderableDragStartListener(
+                    index: index,
+                    child: const Icon(Icons.drag_handle),
+                  ),
+                  title: Text(
+                    queued.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    queued.artist,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: IconButton(
+                    tooltip: 'Remove from playback queue',
+                    icon: const Icon(Icons.close),
+                    onPressed: () => player.removeAt(index),
+                  ),
+                  onTap: () => player.playAt(index),
+                );
+              },
             ),
           ],
         );

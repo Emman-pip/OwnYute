@@ -86,17 +86,27 @@ class LibraryTrackTile extends StatelessWidget {
       onLongPress: allowSelection ? onToggleSelection : null,
       trailing: allowSelection && selecting
           ? null
-          : PopupMenuButton<String>(
-              onSelected: (action) =>
-                  libraryTrackAction(context, app, track, action),
-              itemBuilder: (context) => const [
-                PopupMenuItem(
-                  value: 'playlist',
-                  child: Text('Add to playlist folder'),
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: 'Add to playback queue',
+                  icon: const Icon(Icons.queue_music),
+                  onPressed: () => app.player.addLibraryToQueue(track),
                 ),
-                PopupMenuItem(value: 'edit', child: Text('Edit metadata')),
-                PopupMenuItem(value: 'move', child: Text('Move file')),
-                PopupMenuItem(value: 'delete', child: Text('Delete song')),
+                PopupMenuButton<String>(
+                  onSelected: (action) =>
+                      libraryTrackAction(context, app, track, action),
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(
+                      value: 'playlist',
+                      child: Text('Add to playlist folder'),
+                    ),
+                    PopupMenuItem(value: 'edit', child: Text('Edit metadata')),
+                    PopupMenuItem(value: 'move', child: Text('Move file')),
+                    PopupMenuItem(value: 'delete', child: Text('Delete song')),
+                  ],
+                ),
               ],
             ),
     );
